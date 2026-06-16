@@ -758,7 +758,7 @@ async function fetchRoute() {
       coordinates,
       instructions: false,
       geometry_simplify: false,
-      preference: planProfile === 'foot' ? 'shortest' : 'recommended',
+      preference: 'recommended', // ORS-Standard für beide Profile: Qualität vor reiner Kürze
     };
     const res = await fetch(url, {
       method: 'POST',
