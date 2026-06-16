@@ -3,22 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-
-<!-- PWA Meta Tags -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="LaufTracker">
 <meta name="theme-color" content="#0a0c10">
 <link rel="manifest" href="manifest.json">
-
-<!-- Apple Touch Icons (für iOS Startbildschirm) -->
 <link rel="apple-touch-icon" href="icon-192.png">
-
 <title>Lauf Tracker</title>
-
-<!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
 <style>
 :root {
   --bg: #0a0c10;
@@ -27,9 +19,9 @@
   --border: rgba(255,255,255,0.07);
   --accent: #00e5a0;
   --blue: #3b82f6;
+  --purple: #a855f7;
   --warn: #f97316;
   --danger: #ef4444;
-  --purple: #a855f7;
   --text: #e8edf5;
   --muted: #5a6580;
   --mono: 'SF Mono','Fira Mono','Courier New',monospace;
@@ -40,52 +32,24 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 
 /* ── PWA INSTALL BANNER ── */
 #installBanner {
-  display: none;
-  position: fixed; top: 0; left: 0; right: 0; z-index: 9000;
+  display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9000;
   background: var(--surface); border-bottom: 1px solid var(--border);
-  padding: 10px 16px;
-  flex-direction: row; align-items: center; gap: 10px;
+  padding: 10px 16px; flex-direction: row; align-items: center; gap: 10px;
   padding-top: calc(10px + env(safe-area-inset-top));
 }
 #installBanner.show { display: flex; }
 #installBanner .install-text { flex: 1; font-size: 13px; line-height: 1.4; }
 #installBanner .install-text strong { color: var(--accent); display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
-#installBannerBtn {
-  padding: 8px 14px; border-radius: 10px;
-  background: var(--accent); color: #001a0d;
-  font-size: 12px; font-weight: 700; border: none; cursor: pointer;
-  white-space: nowrap; letter-spacing: 0.04em;
-}
-#installBannerDismiss {
-  background: none; border: none; color: var(--muted);
-  font-size: 20px; cursor: pointer; padding: 0 4px; line-height: 1;
-}
+#installBannerBtn { padding: 8px 14px; border-radius: 10px; background: var(--accent); color: #001a0d; font-size: 12px; font-weight: 700; border: none; cursor: pointer; white-space: nowrap; }
+#installBannerDismiss { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0 4px; }
 
-/* ── OFFLINE INDICATOR ── */
-#offlineBadge {
-  display: none;
-  position: fixed; top: 8px; right: 8px; z-index: 8999;
-  background: var(--warn); color: #fff;
-  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-  padding: 4px 10px; border-radius: 20px;
-}
+/* ── OFFLINE ── */
+#offlineBadge { display: none; position: fixed; top: 8px; right: 8px; z-index: 8999; background: var(--warn); color: #fff; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; }
 body.offline #offlineBadge { display: block; }
 
 /* ── NAV ── */
-#nav {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  display: flex;
-  padding-bottom: env(safe-area-inset-bottom);
-}
-.nav-btn {
-  flex: 1; padding: 12px 4px 10px; border: none; background: none;
-  color: var(--muted); font-size: 10px; letter-spacing: 0.06em;
-  text-transform: uppercase; cursor: pointer; display: flex;
-  flex-direction: column; align-items: center; gap: 4px;
-  transition: color 0.2s;
-}
+#nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000; background: var(--surface); border-top: 1px solid var(--border); display: flex; padding-bottom: env(safe-area-inset-bottom); }
+.nav-btn { flex: 1; padding: 12px 4px 10px; border: none; background: none; color: var(--muted); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: color 0.2s; }
 .nav-btn svg { width: 22px; height: 22px; }
 .nav-btn.active { color: var(--accent); }
 
@@ -93,267 +57,154 @@ body.offline #offlineBadge { display: block; }
 .page { position: fixed; inset: 0; bottom: 56px; overflow-y: auto; display: none; flex-direction: column; }
 .page.active { display: flex; }
 
-/* ── PAGE: TRACKER ── */
+/* ── TRACKER PAGE ── */
 #page-tracker { background: var(--bg); }
 
-#map {
-  flex: 1;
-  min-height: 240px;
-  position: relative;
-  z-index: 1;
-}
+#map { flex: 1; min-height: 200px; position: relative; z-index: 1; }
 
-.map-controls {
-  position: absolute; top: 10px; right: 10px; z-index: 500;
-  display: flex; flex-direction: column; gap: 6px;
-}
-.map-ctrl-btn {
-  width: 36px; height: 36px; border-radius: 8px;
-  background: var(--surface); border: 1px solid var(--border);
-  color: var(--text); font-size: 16px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-}
+.map-controls { position: absolute; top: 10px; right: 10px; z-index: 500; display: flex; flex-direction: column; gap: 6px; }
+.map-ctrl-btn { width: 36px; height: 36px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
 .map-ctrl-btn.active-btn { background: var(--accent); color: #001a0d; border-color: var(--accent); }
 
-.tracker-bottom {
-  background: var(--bg);
-  padding: 14px 16px 0;
-  flex-shrink: 0;
-}
+/* ── VIEW TOGGLE ── */
+#viewToggle { position: absolute; top: 10px; left: 10px; z-index: 500; }
+#viewToggleBtn { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+#viewToggleBtn.compact { color: var(--accent); border-color: rgba(0,229,160,0.4); }
+#viewToggleBtn svg { width: 14px; height: 14px; }
 
-/* Status row */
-.status-row {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 12px;
-}
-.gps-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--muted); flex-shrink: 0;
-  transition: background 0.3s;
-}
-.gps-dot.ok { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: blink 1.5s infinite; }
-.gps-dot.bad { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.tracker-bottom { background: var(--bg); padding: 12px 16px 0; flex-shrink: 0; }
+
+/* ── STATUS ROW ── */
+.status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.gps-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background 0.3s; }
+.gps-dot.ok  { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: blink 1.5s infinite; }
+.gps-dot.bad { background: var(--warn);   box-shadow: 0 0 6px var(--warn); }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 .gps-label { font-size: 11px; color: var(--muted); flex: 1; }
-.gps-acc { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+.gps-acc   { font-family: var(--mono); font-size: 11px; color: var(--accent); }
 
-/* Big stats */
-.stat-row {
-  display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
-  gap: 8px; margin-bottom: 12px;
-}
-.stat-box {
-  background: var(--card); border-radius: 10px;
-  border: 1px solid var(--border);
-  padding: 10px 8px; text-align: center;
-}
-.stat-box-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
-.stat-box-val { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--text); line-height: 1; }
-.stat-box-unit { font-size: 9px; color: var(--muted); margin-top: 2px; }
+/* ── TIMER ── */
+.timer-big { text-align: center; font-family: var(--mono); font-size: clamp(36px, 11vw, 56px); font-weight: 300; letter-spacing: -0.02em; background: linear-gradient(120deg, var(--text) 30%, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 10px; }
 
-/* Timer */
-.timer-big {
-  text-align: center;
-  font-family: var(--mono);
-  font-size: clamp(38px, 12vw, 60px);
-  font-weight: 300;
-  letter-spacing: -0.02em;
-  background: linear-gradient(120deg, var(--text) 30%, var(--accent));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 12px;
-}
+/* ── VIEW A: Normal Stats (3+3 grid) ── */
+#viewA { }
+.stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; margin-bottom: 9px; }
+.stat-box { background: var(--card); border-radius: 10px; border: 1px solid var(--border); padding: 9px 6px; text-align: center; }
+.stat-box-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+.stat-box-val   { font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--text); line-height: 1; }
+.stat-box-unit  { font-size: 9px; color: var(--muted); margin-top: 2px; }
 
-/* Speed chart mini */
-.speed-chart-wrap {
-  background: var(--card); border-radius: var(--r);
-  border: 1px solid var(--border);
-  padding: 10px 12px; margin-bottom: 12px;
-}
-.speed-chart-header {
-  display: flex; justify-content: space-between;
-  font-size: 10px; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.1em;
-  margin-bottom: 8px;
-}
-#speedCanvas { width: 100%; height: 50px; display: block; }
+/* ── CHART ── */
+.speed-chart-wrap { background: var(--card); border-radius: var(--r); border: 1px solid var(--border); padding: 9px 12px; margin-bottom: 10px; }
+.speed-chart-header { display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+.chart-legend { display: flex; gap: 10px; }
+.chart-legend-item { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--muted); }
+.chart-legend-line { width: 16px; height: 2px; border-radius: 1px; }
+#speedCanvas { width: 100%; height: 52px; display: block; }
 
-/* Controls */
-.ctrl-row {
-  display: flex; gap: 8px; padding-bottom: 12px;
-}
-.btn {
-  flex: 1; padding: 16px; border: none; border-radius: var(--r);
-  font-size: 14px; font-weight: 700; letter-spacing: 0.08em;
-  text-transform: uppercase; cursor: pointer; transition: transform 0.1s, opacity 0.2s;
-}
+/* ── VIEW B: Große Anzeige ── */
+#viewB { display: none; }
+.big-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.big-box { background: var(--card); border-radius: 12px; border: 1px solid var(--border); padding: 14px 10px 12px; text-align: center; }
+.big-box-label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.big-box-val   { font-family: var(--mono); font-size: clamp(26px, 8vw, 38px); font-weight: 700; color: var(--text); line-height: 1; }
+.big-box-unit  { font-size: 10px; color: var(--muted); margin-top: 4px; }
+.big-box.accent .big-box-val { color: var(--accent); }
+.big-box.blue   .big-box-val { color: var(--blue); }
+.big-box.purple .big-box-val { color: var(--purple); }
+
+/* ── CONTROLS ── */
+.ctrl-row { display: flex; gap: 8px; padding-bottom: 10px; }
+.btn { flex: 1; padding: 15px; border: none; border-radius: var(--r); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; transition: transform 0.1s, opacity 0.2s; }
 .btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .btn-start { background: linear-gradient(135deg,#00e5a0,#00b87a); color: #001a0d; }
 .btn-stop  { background: linear-gradient(135deg,#ef4444,#b91c1c); color: #fff; }
-.btn-save  { background: var(--card); color: var(--accent); border: 1px solid var(--accent); flex: 0 0 auto; padding: 16px 14px; font-size: 12px; }
-.btn-icon  { flex: 0 0 auto; padding: 16px 14px; background: var(--card); color: var(--muted); border: 1px solid var(--border); font-size: 18px; }
+.btn-save  { background: var(--card); color: var(--accent); border: 1px solid var(--accent); flex: 0 0 auto; padding: 15px 13px; font-size: 12px; }
+.btn-icon  { flex: 0 0 auto; padding: 15px 13px; background: var(--card); color: var(--muted); border: 1px solid var(--border); font-size: 18px; }
 
-/* ── PAGE: HISTORY ── */
+/* ── HISTORY PAGE ── */
 #page-history { background: var(--bg); padding: 16px; }
-
-.page-title {
-  font-size: 20px; font-weight: 700; margin-bottom: 4px;
-}
-.page-sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
-
-.import-row {
-  display: flex; gap: 8px; margin-bottom: 16px;
-}
-.btn-import {
-  flex: 1; padding: 12px; border-radius: var(--r);
-  background: var(--card); border: 1px dashed rgba(255,255,255,0.15);
-  color: var(--muted); font-size: 12px; font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  cursor: pointer; text-align: center;
-}
+.page-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+.page-sub   { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+.import-row { display: flex; gap: 8px; margin-bottom: 16px; }
+.btn-import { flex: 1; padding: 12px; border-radius: var(--r); background: var(--card); border: 1px dashed rgba(255,255,255,0.15); color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; text-align: center; }
 .btn-import:hover { border-color: var(--accent); color: var(--accent); }
-
-.run-card {
-  background: var(--card); border-radius: var(--r);
-  border: 1px solid var(--border);
-  padding: 14px; margin-bottom: 10px;
-  cursor: pointer; transition: border-color 0.2s;
-}
+.run-card { background: var(--card); border-radius: var(--r); border: 1px solid var(--border); padding: 14px; margin-bottom: 10px; cursor: pointer; transition: border-color 0.2s; }
 .run-card:hover { border-color: rgba(0,229,160,0.4); }
 .run-card.selected { border-color: var(--accent); }
-.run-card-top {
-  display: flex; justify-content: space-between; align-items: flex-start;
-  margin-bottom: 8px;
-}
+.run-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
 .run-card-date { font-size: 13px; font-weight: 600; }
-.run-card-type {
-  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--muted); padding: 2px 7px;
-  border-radius: 20px; border: 1px solid var(--border);
-}
+.run-card-type { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 2px 7px; border-radius: 20px; border: 1px solid var(--border); }
 .run-card-type.gpx { color: var(--blue); border-color: var(--blue); }
-.run-card-stats {
-  display: flex; gap: 16px;
-}
+.run-card-stats { display: flex; gap: 16px; }
 .run-stat { font-size: 12px; }
 .run-stat-val { font-family: var(--mono); font-weight: 700; color: var(--text); }
 .run-stat-lbl { color: var(--muted); }
-.run-card-actions {
-  display: flex; gap: 8px; margin-top: 10px; padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-.run-action-btn {
-  padding: 6px 12px; border-radius: 8px;
-  font-size: 11px; font-weight: 600; cursor: pointer;
-  border: 1px solid var(--border); background: none; color: var(--muted);
-  letter-spacing: 0.06em; text-transform: uppercase;
-}
+.run-card-actions { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.run-action-btn { padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: none; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
 .run-action-btn.primary { color: var(--accent); border-color: var(--accent); }
 .run-action-btn.danger  { color: var(--danger); border-color: var(--danger); }
-
-.empty-state {
-  text-align: center; padding: 60px 20px; color: var(--muted);
-}
+.empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
 .empty-state svg { opacity: 0.2; margin-bottom: 12px; }
 .empty-state p { font-size: 14px; }
 
-/* ── PAGE: COMPARE (detail view) ── */
+/* ── COMPARE PAGE ── */
 #page-compare { background: var(--bg); }
-
-#compare-map { height: 280px; }
-
+#compare-map { height: 260px; }
 .compare-bottom { padding: 14px 16px; }
-
-.legend-row {
-  display: flex; gap: 16px; margin-bottom: 12px; flex-wrap: wrap;
-}
+.legend-row { display: flex; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
 .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-
-.compare-chart-wrap {
-  background: var(--card); border-radius: var(--r);
-  border: 1px solid var(--border);
-  padding: 12px; margin-bottom: 12px;
-}
-.compare-chart-title {
-  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--muted); margin-bottom: 8px;
-}
+.compare-chart-wrap { background: var(--card); border-radius: var(--r); border: 1px solid var(--border); padding: 12px; margin-bottom: 12px; }
+.compare-chart-title { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
 #compareCanvas { width: 100%; height: 80px; display: block; }
-
-.detail-stats {
-  display: grid; grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px; margin-bottom: 12px;
-}
-.detail-stat {
-  background: var(--card); border-radius: 10px;
-  border: 1px solid var(--border);
-  padding: 10px; text-align: center;
-}
+.detail-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.detail-stat { background: var(--card); border-radius: 10px; border: 1px solid var(--border); padding: 10px; text-align: center; }
 .detail-stat-val { font-family: var(--mono); font-size: 20px; font-weight: 700; }
 .detail-stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.08em; }
-
-.splits-wrap {
-  background: var(--card); border-radius: var(--r);
-  border: 1px solid var(--border); padding: 12px;
-}
+.splits-wrap { background: var(--card); border-radius: var(--r); border: 1px solid var(--border); padding: 12px; }
 .splits-title { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
 .split-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; font-family: var(--mono); }
 .split-row:last-child { border-bottom: none; }
-.split-km { color: var(--muted); }
+.split-km   { color: var(--muted); }
 .split-pace { color: var(--accent); }
+.speed-gradient-bar { height: 6px; border-radius: 3px; background: linear-gradient(90deg,#ef4444,#f97316,#eab308,#00e5a0); margin: 4px 0; }
+.speed-gradient-labels { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); }
 
 /* Toast */
-#toast {
-  position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%) translateY(20px);
-  background: var(--card); border: 1px solid var(--border);
-  color: var(--text); padding: 10px 18px; border-radius: 20px;
-  font-size: 13px; z-index: 9999; opacity: 0;
-  transition: opacity 0.3s, transform 0.3s; pointer-events: none;
-  white-space: nowrap;
-}
+#toast { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 10px 18px; border-radius: 20px; font-size: 13px; z-index: 9999; opacity: 0; transition: opacity 0.3s, transform 0.3s; pointer-events: none; white-space: nowrap; }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* Speed color legend */
-.speed-gradient-bar {
-  height: 6px; border-radius: 3px;
-  background: linear-gradient(90deg, #ef4444, #f97316, #eab308, #00e5a0);
-  margin: 4px 0;
-}
-.speed-gradient-labels {
-  display: flex; justify-content: space-between;
-  font-size: 9px; color: var(--muted);
-}
-
-/* Leaflet dark override */
 .leaflet-tile { filter: brightness(0.75) saturate(0.8); }
 .leaflet-container { background: #0a0c10; }
 </style>
 </head>
 <body>
 
-<!-- OFFLINE INDICATOR -->
 <div id="offlineBadge">✈ Offline</div>
 
-<!-- PWA INSTALL BANNER (wird per JS eingeblendet) -->
 <div id="installBanner">
-  <div class="install-text">
-    <strong>Als App installieren</strong>
-    Offline nutzbar · GPS immer verfügbar
-  </div>
+  <div class="install-text"><strong>Als App installieren</strong>Offline nutzbar · GPS immer verfügbar</div>
   <button id="installBannerBtn">Installieren</button>
   <button id="installBannerDismiss">×</button>
 </div>
 
-<!-- PAGES -->
+<!-- ══ TRACKER PAGE ══ -->
 <div class="page active" id="page-tracker">
   <div id="map">
+    <!-- View toggle -->
+    <div id="viewToggle">
+      <button id="viewToggleBtn" onclick="toggleView()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Groß
+      </button>
+    </div>
+    <!-- Map controls -->
     <div class="map-controls">
-      <button class="map-ctrl-btn active-btn" id="btnFollow" title="Folgen" onclick="toggleFollow()">◎</button>
-      <button class="map-ctrl-btn" id="btnFitAll" title="Alles zeigen" onclick="fitRoute()">⤢</button>
-      <button class="map-ctrl-btn" id="btnRefTrack" title="Referenztrack" onclick="toggleRefTrack()">👻</button>
+      <button class="map-ctrl-btn active-btn" id="btnFollow"   onclick="toggleFollow()">◎</button>
+      <button class="map-ctrl-btn"            id="btnFitAll"   onclick="fitRoute()">⤢</button>
+      <button class="map-ctrl-btn"            id="btnRefTrack" onclick="toggleRefTrack()">👻</button>
     </div>
   </div>
 
@@ -361,40 +212,99 @@ body.offline #offlineBadge { display: block; }
     <div class="status-row">
       <div class="gps-dot" id="gpsDot"></div>
       <div class="gps-label" id="gpsLabel">GPS wird gesucht…</div>
-      <div class="gps-acc" id="gpsAcc"></div>
+      <div class="gps-acc"   id="gpsAcc"></div>
     </div>
 
     <div class="timer-big" id="timer">00:00:00</div>
 
-    <div class="stat-row">
-      <div class="stat-box">
-        <div class="stat-box-label">Distanz</div>
-        <div class="stat-box-val" id="statDist">0.00</div>
-        <div class="stat-box-unit">km</div>
+    <!-- VIEW A: Normal -->
+    <div id="viewA">
+      <div class="stat-row">
+        <div class="stat-box">
+          <div class="stat-box-label">Distanz</div>
+          <div class="stat-box-val" id="statDist">0.00</div>
+          <div class="stat-box-unit">km</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-label">Pace ⌀20s</div>
+          <div class="stat-box-val" id="statPace">–:––</div>
+          <div class="stat-box-unit">min/km</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-label">Speed ⌀20s</div>
+          <div class="stat-box-val" id="statSpeed">0.0</div>
+          <div class="stat-box-unit">km/h</div>
+        </div>
       </div>
-      <div class="stat-box">
-        <div class="stat-box-label">Pace</div>
-        <div class="stat-box-val" id="statPace">–:––</div>
-        <div class="stat-box-unit">min/km</div>
+      <div class="stat-row">
+        <div class="stat-box">
+          <div class="stat-box-label">Ø Speed</div>
+          <div class="stat-box-val" id="statAvgSpeed">0.0</div>
+          <div class="stat-box-unit">km/h</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-label">Höhenmeter</div>
+          <div class="stat-box-val" id="statAlt">0</div>
+          <div class="stat-box-unit">m ↑</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-label">HM/h ⌀2min</div>
+          <div class="stat-box-val" id="statAltRate">0</div>
+          <div class="stat-box-unit">m/h</div>
+        </div>
       </div>
-      <div class="stat-box">
-        <div class="stat-box-label">Speed</div>
-        <div class="stat-box-val" id="statSpeed">0.0</div>
-        <div class="stat-box-unit">km/h</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-box-label">kcal</div>
-        <div class="stat-box-val" id="statCal">0</div>
-        <div class="stat-box-unit">ca.</div>
+      <div class="speed-chart-wrap">
+        <div class="speed-chart-header">
+          <span>Verlauf</span>
+          <div class="chart-legend">
+            <div class="chart-legend-item">
+              <div class="chart-legend-line" style="background:var(--accent)"></div>
+              <span id="speedChartLabel">– km/h</span>
+            </div>
+            <div class="chart-legend-item">
+              <div class="chart-legend-line" style="background:var(--purple);"></div>
+              <span id="altChartLabel">– m/h</span>
+            </div>
+          </div>
+        </div>
+        <canvas id="speedCanvas"></canvas>
       </div>
     </div>
 
-    <div class="speed-chart-wrap">
-      <div class="speed-chart-header">
-        <span>Geschwindigkeit</span>
-        <span id="speedChartLabel">– km/h</span>
+    <!-- VIEW B: Groß -->
+    <div id="viewB">
+      <div class="big-grid">
+        <div class="big-box accent">
+          <div class="big-box-label">Distanz</div>
+          <div class="big-box-val" id="bigDist">0.00</div>
+          <div class="big-box-unit">km</div>
+        </div>
+        <div class="big-box">
+          <div class="big-box-label">Pace ⌀20s</div>
+          <div class="big-box-val" id="bigPace">–:––</div>
+          <div class="big-box-unit">min/km</div>
+        </div>
+        <div class="big-box blue">
+          <div class="big-box-label">Speed ⌀20s</div>
+          <div class="big-box-val" id="bigSpeed">0.0</div>
+          <div class="big-box-unit">km/h</div>
+        </div>
+        <div class="big-box">
+          <div class="big-box-label">Ø Speed</div>
+          <div class="big-box-val" id="bigAvgSpeed">0.0</div>
+          <div class="big-box-unit">km/h</div>
+        </div>
+        <div class="big-box accent">
+          <div class="big-box-label">Höhenmeter</div>
+          <div class="big-box-val" id="bigAlt">0</div>
+          <div class="big-box-unit">m ↑</div>
+        </div>
+        <div class="big-box purple">
+          <div class="big-box-label">HM/h ⌀2min</div>
+          <div class="big-box-val" id="bigAltRate">0</div>
+          <div class="big-box-unit">m/h</div>
+        </div>
       </div>
-      <canvas id="speedCanvas"></canvas>
     </div>
 
     <div class="ctrl-row">
@@ -406,28 +316,20 @@ body.offline #offlineBadge { display: block; }
   </div>
 </div>
 
-<!-- HISTORY PAGE -->
+<!-- ══ HISTORY PAGE ══ -->
 <div class="page" id="page-history">
   <div style="padding:16px 16px 0">
     <div class="page-title">Meine Läufe</div>
     <div class="page-sub" id="historySub">Keine Läufe gespeichert</div>
-
     <div class="import-row">
-      <label class="btn-import" style="cursor:pointer">
-        📂 JSON laden
-        <input type="file" accept=".json" style="display:none" onchange="importJSON(event)">
-      </label>
-      <label class="btn-import" style="cursor:pointer">
-        🗺 GPX laden
-        <input type="file" accept=".gpx,.xml" style="display:none" onchange="importGPX(event)">
-      </label>
+      <label class="btn-import" style="cursor:pointer">📂 JSON laden<input type="file" accept=".json" style="display:none" onchange="importJSON(event)"></label>
+      <label class="btn-import" style="cursor:pointer">🗺 GPX laden<input type="file" accept=".gpx,.xml" style="display:none" onchange="importGPX(event)"></label>
     </div>
   </div>
-
   <div id="runList" style="padding:0 16px 16px"></div>
 </div>
 
-<!-- COMPARE / DETAIL PAGE -->
+<!-- ══ COMPARE PAGE ══ -->
 <div class="page" id="page-compare">
   <div id="compare-map"></div>
   <div class="compare-bottom">
@@ -435,23 +337,18 @@ body.offline #offlineBadge { display: block; }
       <button class="run-action-btn" onclick="showPage('history')" style="font-size:16px;border:none;color:var(--muted)">← Zurück</button>
       <div style="font-size:14px;font-weight:700" id="compareTitle">Lauf Detail</div>
     </div>
-
     <div class="legend-row" id="compareLegend"></div>
-
     <div class="detail-stats" id="detailStats"></div>
-
     <div class="compare-chart-wrap">
       <div class="compare-chart-title">Geschwindigkeit über Distanz</div>
       <canvas id="compareCanvas"></canvas>
       <div class="speed-gradient-bar"></div>
       <div class="speed-gradient-labels"><span>Langsam</span><span>Schnell</span></div>
     </div>
-
     <div class="splits-wrap">
       <div class="splits-title">Kilometer-Splits</div>
       <div id="compareSplits"></div>
     </div>
-
     <div style="display:flex;gap:8px;margin-top:12px" id="compareActions"></div>
   </div>
 </div>
@@ -470,48 +367,33 @@ body.offline #offlineBadge { display: block; }
 
 <div id="toast"></div>
 
-<!-- Hidden file inputs -->
-<input type="file" id="fileJSON" accept=".json" style="display:none" onchange="importJSON(event)">
-<input type="file" id="fileGPX"  accept=".gpx,.xml" style="display:none" onchange="importGPX(event)">
-
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
 // ══════════════════════════════════════════════
-//  PWA: SERVICE WORKER REGISTRIERUNG
+//  SERVICE WORKER
 // ══════════════════════════════════════════════
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
       .then(reg => {
-        console.log('[PWA] Service Worker registriert:', reg.scope);
         reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing;
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          const nw = reg.installing;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller)
               toast('Update verfügbar – bitte App neu starten');
-            }
           });
         });
-      })
-      .catch(err => console.warn('[PWA] SW-Registrierung fehlgeschlagen:', err));
+      }).catch(e => console.warn('[SW]', e));
   });
 }
 
-// ── PWA INSTALL PROMPT ─────────────────────────
+// PWA Install
 let deferredPrompt = null;
-
 window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  deferredPrompt = e;
-
-  // Banner nur zeigen wenn nicht bereits installiert
-  if (!window.matchMedia('(display-mode: standalone)').matches) {
+  e.preventDefault(); deferredPrompt = e;
+  if (!window.matchMedia('(display-mode: standalone)').matches)
     document.getElementById('installBanner').classList.add('show');
-  }
 });
-
 document.getElementById('installBannerBtn').addEventListener('click', async () => {
   if (!deferredPrompt) return;
   deferredPrompt.prompt();
@@ -520,35 +402,31 @@ document.getElementById('installBannerBtn').addEventListener('click', async () =
   document.getElementById('installBanner').classList.remove('show');
   if (outcome === 'accepted') toast('App installiert! ✓');
 });
-
-document.getElementById('installBannerDismiss').addEventListener('click', () => {
-  document.getElementById('installBanner').classList.remove('show');
-});
-
-// App wurde installiert → Banner ausblenden
+document.getElementById('installBannerDismiss').addEventListener('click', () =>
+  document.getElementById('installBanner').classList.remove('show'));
 window.addEventListener('appinstalled', () => {
-  document.getElementById('installBanner').classList.remove('show');
-  deferredPrompt = null;
+  document.getElementById('installBanner').classList.remove('show'); deferredPrompt = null;
 });
 
-// ── ONLINE / OFFLINE STATUS ────────────────────
+// Online/Offline
 function updateOnlineStatus() {
   document.body.classList.toggle('offline', !navigator.onLine);
   if (!navigator.onLine) toast('📴 Offline – gecachte Karten verfügbar');
 }
-window.addEventListener('online',  updateOnlineStatus);
+window.addEventListener('online', updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
-updateOnlineStatus(); // Initial-Check
-
+updateOnlineStatus();
 
 // ══════════════════════════════════════════════
 //  CONSTANTS & STATE
 // ══════════════════════════════════════════════
-const WEIGHT_KG = 70;
-const STORAGE_KEY = 'lauftracker_runs_v2';
+const STORAGE_KEY = 'lauftracker_runs_v3';
+const SPEED_AVG_SEC  = 20;   // Gleitfenster Geschwindigkeit
+const ALT_AVG_SEC    = 120;  // Gleitfenster HM/h
+const ALT_MIN_DELTA  = 2;    // Mindest-Höhenänderung in Metern
 
-let runs = loadRuns();          // saved runs array
-let currentRun = null;          // active recording
+let runs = loadRuns();
+let currentRun = null;
 let running = false;
 let elapsed = 0;
 let startTime = null;
@@ -557,50 +435,94 @@ let watchId = null;
 let followMode = true;
 let refTrackVisible = false;
 let activeRefRunId = null;
+let viewMode = 'A'; // 'A' = normal, 'B' = groß
 
-// Map instances
-let tMap = null;   // tracker map
-let cMap = null;   // compare map
+// Map
+let tMap = null, cMap = null;
+let tCurrentLine = null, tMarker = null, tRefLine = null, tRefMarker = null, tStartDot = null;
 
-// Leaflet layers
-let tCurrentLine = null;
-let tMarker = null;
-let tRefLine = null;
-let tRefMarker = null;
-let tStartDot = null;
-
-// Speed canvas
 const speedCanvas = document.getElementById('speedCanvas');
-const speedCtx = speedCanvas.getContext('2d');
+const speedCtx    = speedCanvas.getContext('2d');
 
 // ══════════════════════════════════════════════
-//  INIT MAP
+//  VIEW TOGGLE
+// ══════════════════════════════════════════════
+function toggleView() {
+  viewMode = viewMode === 'A' ? 'B' : 'A';
+  document.getElementById('viewA').style.display = viewMode === 'A' ? '' : 'none';
+  document.getElementById('viewB').style.display = viewMode === 'B' ? '' : 'none';
+  const btn = document.getElementById('viewToggleBtn');
+  if (viewMode === 'B') {
+    btn.classList.add('compact');
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg> Normal`;
+  } else {
+    btn.classList.remove('compact');
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Groß`;
+  }
+  if (tMap) setTimeout(() => tMap.invalidateSize(), 50);
+}
+
+// ══════════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════════
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function fmtTime(sec) {
+  sec = Math.floor(sec);
+  return `${pad(Math.floor(sec/3600))}:${pad(Math.floor((sec%3600)/60))}:${pad(sec%60)}`;
+}
+function pad(n) { return String(n).padStart(2,'0'); }
+function fmtPace(secPerKm) {
+  if (!isFinite(secPerKm) || secPerKm <= 0 || secPerKm > 3600) return '–:––';
+  return `${Math.floor(secPerKm/60)}:${pad(Math.floor(secPerKm%60))}`;
+}
+function fmtDate(ts) {
+  return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+function speedColor(kmh, minSpd, maxSpd) {
+  const t = maxSpd > minSpd ? Math.max(0, Math.min(1, (kmh-minSpd)/(maxSpd-minSpd))) : 0.5;
+  const s = [[239,68,68],[249,115,22],[234,179,8],[0,229,160]];
+  const seg = t*(s.length-1), i = Math.min(Math.floor(seg), s.length-2), f = seg-i;
+  return `rgb(${Math.round(s[i][0]+f*(s[i+1][0]-s[i][0]))},${Math.round(s[i][1]+f*(s[i+1][1]-s[i][1]))},${Math.round(s[i][2]+f*(s[i+1][2]-s[i][2]))})`;
+}
+
+// ── Gleitender Durchschnitt der letzten N Sekunden ──
+function rollingAvg(points, field, windowSec) {
+  if (!points.length) return 0;
+  const now = points[points.length-1].ts;
+  const cutoff = now - windowSec * 1000;
+  const window = points.filter(p => p.ts >= cutoff);
+  if (!window.length) return 0;
+  return window.reduce((s,p) => s + (p[field]||0), 0) / window.length;
+}
+
+// ══════════════════════════════════════════════
+//  MAP
 // ══════════════════════════════════════════════
 function initTrackerMap() {
   if (tMap) return;
-  tMap = L.map('map', { zoomControl: false, attributionControl: false })
-    .setView([48.1, 11.6], 15);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(tMap);
-  L.control.attribution({ prefix: '© OSM' }).addTo(tMap);
-
-  tCurrentLine = L.polyline([], { color: '#00e5a0', weight: 4, opacity: 0.9 }).addTo(tMap);
-  tRefLine     = L.polyline([], { color: '#3b82f6', weight: 3, opacity: 0.5, dashArray: '6 4' }).addTo(tMap);
-
-  tStartDot = L.circleMarker([0,0], { radius: 5, color: '#00e5a0', fillColor: '#00e5a0', fillOpacity: 1 });
-  tMarker   = L.circleMarker([0,0], { radius: 7, color: '#fff',     fillColor: '#3b82f6', fillOpacity: 1, weight: 2 });
-
-  // navigator.geolocation.getCurrentPosition triggers map center
-  navigator.geolocation.getCurrentPosition(p => {
-    tMap.setView([p.coords.latitude, p.coords.longitude], 16);
-  }, () => {});
+  tMap = L.map('map', {zoomControl:false, attributionControl:false}).setView([48.1,11.6],15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(tMap);
+  L.control.attribution({prefix:'© OSM'}).addTo(tMap);
+  tCurrentLine = L.polyline([], {color:'#00e5a0', weight:4, opacity:0.9}).addTo(tMap);
+  tRefLine     = L.polyline([], {color:'#3b82f6', weight:3, opacity:0.5, dashArray:'6 4'}).addTo(tMap);
+  tStartDot    = L.circleMarker([0,0], {radius:5, color:'#00e5a0', fillColor:'#00e5a0', fillOpacity:1});
+  tMarker      = L.circleMarker([0,0], {radius:7, color:'#fff', fillColor:'#3b82f6', fillOpacity:1, weight:2});
+  navigator.geolocation.getCurrentPosition(p => tMap.setView([p.coords.latitude, p.coords.longitude], 16), ()=>{});
 }
-
 function initCompareMap() {
   if (cMap) { cMap.invalidateSize(); return; }
-  cMap = L.map('compare-map', { zoomControl: false, attributionControl: false })
-    .setView([48.1, 11.6], 15);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(cMap);
-  L.control.attribution({ prefix: '© OSM' }).addTo(cMap);
+  cMap = L.map('compare-map', {zoomControl:false, attributionControl:false}).setView([48.1,11.6],15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(cMap);
+  L.control.attribution({prefix:'© OSM'}).addTo(cMap);
 }
 
 // ══════════════════════════════════════════════
@@ -609,67 +531,12 @@ function initCompareMap() {
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-
-  document.getElementById('page-' + name).classList.add('active');
-  const nb = document.getElementById('nav-' + name);
+  document.getElementById('page-'+name).classList.add('active');
+  const nb = document.getElementById('nav-'+name);
   if (nb) nb.classList.add('active');
-
-  if (name === 'tracker') {
-    setTimeout(() => { if (tMap) tMap.invalidateSize(); }, 100);
-    initTrackerMap();
-  }
-  if (name === 'history') renderHistory();
-  if (name === 'compare') {
-    setTimeout(() => { if (cMap) cMap.invalidateSize(); }, 100);
-  }
-}
-
-// ══════════════════════════════════════════════
-//  UTILS
-// ══════════════════════════════════════════════
-function haversine(lat1, lng1, lat2, lng2) {
-  const R = 6371;
-  const dLat = (lat2-lat1)*Math.PI/180;
-  const dLng = (lng2-lng1)*Math.PI/180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-function fmtTime(sec) {
-  sec = Math.floor(sec);
-  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
-function pad(n) { return String(n).padStart(2,'0'); }
-
-function fmtPace(secPerKm) {
-  if (!isFinite(secPerKm) || secPerKm <= 0 || secPerKm > 3600) return '–:––';
-  return `${Math.floor(secPerKm/60)}:${pad(Math.floor(secPerKm%60))}`;
-}
-
-function fmtDate(ts) {
-  return new Date(ts).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-}
-
-function toast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2500);
-}
-
-function speedColor(kmh, minSpd, maxSpd) {
-  const t = maxSpd > minSpd ? Math.max(0, Math.min(1, (kmh - minSpd) / (maxSpd - minSpd))) : 0.5;
-  const stops = [
-    [239,68,68], [249,115,22], [234,179,8], [0,229,160]
-  ];
-  const seg = t * (stops.length - 1);
-  const i = Math.min(Math.floor(seg), stops.length - 2);
-  const f = seg - i;
-  const r = Math.round(stops[i][0] + f*(stops[i+1][0]-stops[i][0]));
-  const g = Math.round(stops[i][1] + f*(stops[i+1][1]-stops[i][1]));
-  const b = Math.round(stops[i][2] + f*(stops[i+1][2]-stops[i][2]));
-  return `rgb(${r},${g},${b})`;
+  if (name==='tracker')  { setTimeout(()=>{ if(tMap) tMap.invalidateSize(); },100); initTrackerMap(); }
+  if (name==='history')  renderHistory();
+  if (name==='compare')  setTimeout(()=>{ if(cMap) cMap.invalidateSize(); },100);
 }
 
 // ══════════════════════════════════════════════
@@ -677,150 +544,156 @@ function speedColor(kmh, minSpd, maxSpd) {
 // ══════════════════════════════════════════════
 function initCurrentRun() {
   currentRun = {
-    id: Date.now(),
-    startTs: Date.now(),
-    points: [],
-    dist: 0,
-    splits: [],
-    lastSplitKm: 0,
-    lastSplitTs: null,
-    lastPos: null
+    id: Date.now(), startTs: Date.now(),
+    points: [], dist: 0, elevGain: 0,
+    splits: [], lastSplitKm: 0, lastPos: null, lastAlt: null
   };
 }
 
 function startRun() {
   if (!navigator.geolocation) { toast('GPS nicht verfügbar'); return; }
   if (!currentRun) initCurrentRun();
-
-  running = true;
-  startTime = Date.now();
-  elapsed = elapsed || 0;
-
+  running = true; startTime = Date.now(); elapsed = elapsed || 0;
   document.getElementById('btnStart').disabled = true;
-  document.getElementById('btnStop').disabled = false;
-  document.getElementById('btnSave').disabled = true;
-
+  document.getElementById('btnStop').disabled  = false;
+  document.getElementById('btnSave').disabled  = true;
   timerInt = setInterval(updateTimerUI, 1000);
-
-  watchId = navigator.geolocation.watchPosition(onGPS, onGPSErr, {
-    enableHighAccuracy: true, maximumAge: 2000, timeout: 15000
-  });
-
+  watchId = navigator.geolocation.watchPosition(onGPS, onGPSErr, {enableHighAccuracy:true, maximumAge:2000, timeout:15000});
   initTrackerMap();
-
   if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
 }
 
 function stopRun() {
-  running = false;
-  elapsed += Date.now() - startTime;
+  running = false; elapsed += Date.now() - startTime;
   clearInterval(timerInt);
   if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
-
   document.getElementById('btnStart').textContent = 'Weiter';
   document.getElementById('btnStart').disabled = false;
-  document.getElementById('btnStop').disabled = true;
-  if (currentRun && currentRun.points.length > 2)
-    document.getElementById('btnSave').disabled = false;
-
-  document.getElementById('gpsDot').className = 'gps-dot';
+  document.getElementById('btnStop').disabled  = true;
+  if (currentRun && currentRun.points.length > 2) document.getElementById('btnSave').disabled = false;
+  document.getElementById('gpsDot').className  = 'gps-dot';
   document.getElementById('gpsLabel').textContent = 'Pausiert';
 }
 
 function resetRun() {
-  stopRun();
-  currentRun = null;
-  elapsed = 0;
-  running = false;
-
-  document.getElementById('timer').textContent = '00:00:00';
-  document.getElementById('statDist').textContent = '0.00';
-  document.getElementById('statPace').textContent = '–:––';
-  document.getElementById('statSpeed').textContent = '0.0';
-  document.getElementById('statCal').textContent = '0';
+  stopRun(); currentRun = null; elapsed = 0; running = false;
+  ['timer','statDist','statPace','statSpeed','statAvgSpeed','statAlt','statAltRate',
+   'bigDist','bigPace','bigSpeed','bigAvgSpeed','bigAlt','bigAltRate'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = id.includes('Pace')||id.includes('pace') ? '–:––' : id.includes('Dist')||id.includes('dist') ? '0.00' : id==='timer' ? '00:00:00' : '0';
+  });
   document.getElementById('speedChartLabel').textContent = '– km/h';
+  document.getElementById('altChartLabel').textContent   = '– m/h';
   document.getElementById('btnStart').textContent = 'Start';
   document.getElementById('btnStart').disabled = false;
-  document.getElementById('btnSave').disabled = true;
+  document.getElementById('btnSave').disabled  = true;
   document.getElementById('gpsLabel').textContent = 'GPS wird gesucht…';
-  document.getElementById('gpsAcc').textContent = '';
+  document.getElementById('gpsAcc').textContent   = '';
   document.getElementById('gpsDot').className = 'gps-dot';
-
   if (tCurrentLine) tCurrentLine.setLatLngs([]);
-  if (tMarker && tMap) { try { tMap.removeLayer(tMarker); } catch{} }
+  if (tMarker   && tMap) { try { tMap.removeLayer(tMarker);   } catch{} }
   if (tStartDot && tMap) { try { tMap.removeLayer(tStartDot); } catch{} }
   speedCtx.clearRect(0, 0, speedCanvas.width, speedCanvas.height);
 }
 
 function onGPS(pos) {
-  const { latitude: lat, longitude: lng, accuracy, speed } = pos.coords;
-  const dot = document.getElementById('gpsDot');
+  const { latitude:lat, longitude:lng, accuracy, speed, altitude } = pos.coords;
   const ts = pos.timestamp || Date.now();
 
   document.getElementById('gpsAcc').textContent = Math.round(accuracy) + 'm';
 
   if (accuracy > 40) {
-    dot.className = 'gps-dot bad';
+    document.getElementById('gpsDot').className = 'gps-dot bad';
     document.getElementById('gpsLabel').textContent = 'Schlechtes GPS-Signal';
     return;
   }
-
-  dot.className = 'gps-dot ok';
+  document.getElementById('gpsDot').className = 'gps-dot ok';
   document.getElementById('gpsLabel').textContent = 'GPS aktiv';
 
-  if (!running) return;
-  if (!currentRun) return;
+  if (!running || !currentRun) return;
 
-  const kmh = speed != null ? speed * 3.6 : 0;
+  // ── Geschwindigkeit (Momentanwert, wird geglättet via rollingAvg) ──
+  let rawSpeed = speed != null ? speed * 3.6 : 0;
 
   if (currentRun.points.length === 0) {
-    currentRun.points.push({ lat, lng, ts, speed: kmh });
+    const pt = { lat, lng, ts, speed: rawSpeed, alt: altitude };
+    currentRun.points.push(pt);
     currentRun.lastPos = { lat, lng, ts };
-    currentRun.lastSplitTs = ts;
-    if (tStartDot) { tStartDot.setLatLng([lat, lng]); tStartDot.addTo(tMap); }
-    if (tMap && followMode) tMap.setView([lat, lng], 16);
+    currentRun.lastAlt = altitude;
+    if (tStartDot) { tStartDot.setLatLng([lat,lng]); tStartDot.addTo(tMap); }
+    if (tMap && followMode) tMap.setView([lat,lng], 16);
     return;
   }
 
   const last = currentRun.lastPos;
   const d = haversine(last.lat, last.lng, lat, lng);
+  if (d < 0.003) return; // Filtert GPS-Jitter unter 3m
 
-  if (d < 0.003) return;
-
-  let calcSpeed = kmh;
-  if (calcSpeed < 0.5 && d > 0) {
+  // Fallback-Speed aus Distanz/Zeit
+  if (rawSpeed < 0.5 && d > 0) {
     const dtSec = (ts - last.ts) / 1000;
-    calcSpeed = dtSec > 0 ? (d / dtSec) * 3600 : 0;
+    rawSpeed = dtSec > 0 ? Math.min((d / dtSec) * 3600, 40) : 0;
   }
-  calcSpeed = Math.min(calcSpeed, 40);
+  rawSpeed = Math.min(rawSpeed, 40);
+
+  // ── Höhengewinn ──
+  let altRateVal = 0; // m/h für diesen Punkt
+  if (altitude != null && currentRun.lastAlt != null) {
+    const dAlt = altitude - currentRun.lastAlt;
+    if (Math.abs(dAlt) >= ALT_MIN_DELTA) {
+      if (dAlt > 0) currentRun.elevGain += dAlt;
+      currentRun.lastAlt = altitude;
+      // HM/h für diesen Punkt (annualisiert)
+      const dtSec = (ts - last.ts) / 1000;
+      altRateVal = dtSec > 0 ? (dAlt / dtSec) * 3600 : 0;
+    }
+  } else if (currentRun.lastAlt == null && altitude != null) {
+    currentRun.lastAlt = altitude;
+  }
 
   currentRun.dist += d;
-  currentRun.points.push({ lat, lng, ts, speed: calcSpeed });
+  currentRun.points.push({ lat, lng, ts, speed: rawSpeed, alt: altitude, altRate: altRateVal });
   currentRun.lastPos = { lat, lng, ts };
 
+  // Splits
   const km = Math.floor(currentRun.dist);
   if (km > currentRun.lastSplitKm) {
-    const elapsed_s = (ts - currentRun.startTs) / 1000;
-    currentRun.splits.push({ km, elapsed: elapsed_s });
+    currentRun.splits.push({ km, elapsed: (ts - currentRun.startTs) / 1000 });
     currentRun.lastSplitKm = km;
   }
 
-  const latlngs = currentRun.points.map(p => [p.lat, p.lng]);
-  if (tCurrentLine) tCurrentLine.setLatLngs(latlngs);
-  if (tMarker) { tMarker.setLatLng([lat, lng]); if (!tMap.hasLayer(tMarker)) tMarker.addTo(tMap); }
-  if (followMode && tMap) tMap.setView([lat, lng]);
+  // ── Gleitende Mittelwerte ──
+  const avgSpeed20  = rollingAvg(currentRun.points, 'speed',   SPEED_AVG_SEC);
+  const avgAltRate  = rollingAvg(currentRun.points, 'altRate', ALT_AVG_SEC);
+  const elapsedSec  = (Date.now() - startTime + (elapsed||0)) / 1000;
+  const totalAvgSpd = currentRun.dist > 0.05 && elapsedSec > 0 ? (currentRun.dist / elapsedSec) * 3600 : 0;
+  const pace20      = avgSpeed20 > 0.1 ? 3600 / avgSpeed20 : 0;
 
-  document.getElementById('statDist').textContent = currentRun.dist.toFixed(2);
-  document.getElementById('statSpeed').textContent = calcSpeed.toFixed(1);
-  document.getElementById('speedChartLabel').textContent = calcSpeed.toFixed(1) + ' km/h';
+  // ── UI Update ──
+  const vals = {
+    statDist:     currentRun.dist.toFixed(2),
+    statPace:     fmtPace(pace20),
+    statSpeed:    avgSpeed20.toFixed(1),
+    statAvgSpeed: totalAvgSpd.toFixed(1),
+    statAlt:      Math.round(currentRun.elevGain),
+    statAltRate:  Math.round(Math.max(0, avgAltRate)),
+    bigDist:      currentRun.dist.toFixed(2),
+    bigPace:      fmtPace(pace20),
+    bigSpeed:     avgSpeed20.toFixed(1),
+    bigAvgSpeed:  totalAvgSpd.toFixed(1),
+    bigAlt:       Math.round(currentRun.elevGain),
+    bigAltRate:   Math.round(Math.max(0, avgAltRate)),
+  };
+  Object.entries(vals).forEach(([id,v]) => { const el=document.getElementById(id); if(el) el.textContent=v; });
+  document.getElementById('speedChartLabel').textContent = avgSpeed20.toFixed(1) + ' km/h';
+  document.getElementById('altChartLabel').textContent   = Math.round(Math.max(0, avgAltRate)) + ' m/h';
 
-  const elapsedSec = (Date.now() - startTime + (elapsed||0)) / 1000;
-  const paceSecPerKm = currentRun.dist > 0.1 ? elapsedSec / currentRun.dist : 0;
-  document.getElementById('statPace').textContent = fmtPace(paceSecPerKm);
-  document.getElementById('statCal').textContent = Math.round(8 * WEIGHT_KG * elapsedSec / 3600);
+  // Map
+  if (tCurrentLine) tCurrentLine.setLatLngs(currentRun.points.map(p=>[p.lat,p.lng]));
+  if (tMarker)      { tMarker.setLatLng([lat,lng]); if(!tMap.hasLayer(tMarker)) tMarker.addTo(tMap); }
+  if (followMode && tMap) tMap.setView([lat,lng]);
 
-  drawSpeedChart(currentRun.points, speedCanvas, speedCtx);
-
+  drawLiveChart(currentRun.points);
   updateRefMarker(currentRun.dist);
 }
 
@@ -840,101 +713,108 @@ function updateTimerUI() {
 function toggleFollow() {
   followMode = !followMode;
   document.getElementById('btnFollow').className = 'map-ctrl-btn' + (followMode ? ' active-btn' : '');
-  if (followMode && currentRun && currentRun.lastPos && tMap)
-    tMap.setView([currentRun.lastPos.lat, currentRun.lastPos.lng]);
+  if (followMode && currentRun?.lastPos && tMap) tMap.setView([currentRun.lastPos.lat, currentRun.lastPos.lng]);
 }
-
 function fitRoute() {
   if (!tMap) return;
-  if (tCurrentLine && tCurrentLine.getLatLngs().length > 1) {
-    tMap.fitBounds(tCurrentLine.getBounds(), { padding: [30,30] });
-  } else if (tRefLine && tRefLine.getLatLngs().length > 1) {
-    tMap.fitBounds(tRefLine.getBounds(), { padding: [30,30] });
-  }
+  if (tCurrentLine?.getLatLngs().length > 1) tMap.fitBounds(tCurrentLine.getBounds(), {padding:[30,30]});
+  else if (tRefLine?.getLatLngs().length > 1) tMap.fitBounds(tRefLine.getBounds(), {padding:[30,30]});
   followMode = false;
   document.getElementById('btnFollow').className = 'map-ctrl-btn';
 }
-
 function toggleRefTrack() {
-  if (!activeRefRunId) { toast('Keinen Referenztrack ausgewählt.\nÖffne einen Lauf → Als Referenz'); return; }
+  if (!activeRefRunId) { toast('Keinen Referenztrack ausgewählt'); return; }
   refTrackVisible = !refTrackVisible;
   document.getElementById('btnRefTrack').className = 'map-ctrl-btn' + (refTrackVisible ? ' active-btn' : '');
-  if (!refTrackVisible) { if(tRefLine) tRefLine.setLatLngs([]); return; }
+  if (!refTrackVisible) { if (tRefLine) tRefLine.setLatLngs([]); return; }
   const run = runs.find(r => r.id === activeRefRunId);
   if (run && tRefLine) tRefLine.setLatLngs(run.points.map(p=>[p.lat,p.lng]));
 }
-
-let tRefPolyPos = 0;
-function updateRefMarker(currentDistKm) {
+function updateRefMarker(distKm) {
   if (!refTrackVisible || !activeRefRunId) return;
   const run = runs.find(r => r.id === activeRefRunId);
-  if (!run || !run.points.length) return;
-
-  let cumDist = 0;
+  if (!run?.points.length) return;
+  let cum = 0;
   for (let i = 1; i < run.points.length; i++) {
-    cumDist += haversine(run.points[i-1].lat, run.points[i-1].lng, run.points[i].lat, run.points[i].lng);
-    if (cumDist >= currentDistKm) {
-      if (!tRefMarker) {
-        tRefMarker = L.circleMarker([run.points[i].lat, run.points[i].lng],
-          { radius: 7, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.8, weight: 2 });
-        if (tMap) tRefMarker.addTo(tMap);
-      } else {
-        tRefMarker.setLatLng([run.points[i].lat, run.points[i].lng]);
-      }
+    cum += haversine(run.points[i-1].lat, run.points[i-1].lng, run.points[i].lat, run.points[i].lng);
+    if (cum >= distKm) {
+      if (!tRefMarker) { tRefMarker = L.circleMarker([run.points[i].lat,run.points[i].lng], {radius:7,color:'#3b82f6',fillColor:'#3b82f6',fillOpacity:0.8,weight:2}); if(tMap) tRefMarker.addTo(tMap); }
+      else tRefMarker.setLatLng([run.points[i].lat, run.points[i].lng]);
       break;
     }
   }
 }
 
 // ══════════════════════════════════════════════
-//  SPEED CHART
+//  LIVE CHART: Speed (grün) + HM/h (lila), dual-Achse
 // ══════════════════════════════════════════════
-function drawSpeedChart(points, canvas, ctx, refPoints) {
-  const W = canvas.offsetWidth || 300;
-  const H = canvas.offsetHeight || 50;
-  canvas.width = W * window.devicePixelRatio;
-  canvas.height = H * window.devicePixelRatio;
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-  ctx.clearRect(0, 0, W, H);
+function drawLiveChart(points) {
+  const W = speedCanvas.offsetWidth || 300;
+  const H = speedCanvas.offsetHeight || 52;
+  speedCanvas.width  = W * devicePixelRatio;
+  speedCanvas.height = H * devicePixelRatio;
+  speedCtx.scale(devicePixelRatio, devicePixelRatio);
+  speedCtx.clearRect(0, 0, W, H);
+  if (points.length < 2) return;
 
+  const speeds   = points.map(p => p.speed || 0);
+  const altRates = points.map(p => Math.max(0, p.altRate || 0));
+  const maxS = Math.max(...speeds, 1);
+  const maxA = Math.max(...altRates, 1);
+
+  function yS(v) { return H - (v / maxS) * (H - 4) - 2; }
+  function yA(v) { return H - (v / maxA) * (H - 4) - 2; }
+
+  // Speed fill
+  const grad = speedCtx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0, 'rgba(0,229,160,0.25)');
+  grad.addColorStop(1, 'rgba(0,229,160,0)');
+  speedCtx.beginPath();
+  speeds.forEach((s,i) => { const x=(i/(speeds.length-1))*W; i===0 ? speedCtx.moveTo(x,yS(s)) : speedCtx.lineTo(x,yS(s)); });
+  speedCtx.lineTo(W,H); speedCtx.lineTo(0,H); speedCtx.closePath();
+  speedCtx.fillStyle = grad; speedCtx.fill();
+
+  // Speed line
+  speedCtx.beginPath(); speedCtx.setLineDash([]); speedCtx.strokeStyle='#00e5a0'; speedCtx.lineWidth=2; speedCtx.lineJoin='round';
+  speeds.forEach((s,i) => { const x=(i/(speeds.length-1))*W; i===0 ? speedCtx.moveTo(x,yS(s)) : speedCtx.lineTo(x,yS(s)); });
+  speedCtx.stroke();
+
+  // HM/h line (lila, gestrichelt)
+  if (altRates.some(v => v > 0)) {
+    speedCtx.beginPath(); speedCtx.setLineDash([3,3]); speedCtx.strokeStyle='#a855f7'; speedCtx.lineWidth=1.5;
+    altRates.forEach((v,i) => { const x=(i/(altRates.length-1))*W; i===0 ? speedCtx.moveTo(x,yA(v)) : speedCtx.lineTo(x,yA(v)); });
+    speedCtx.stroke();
+    speedCtx.setLineDash([]);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  DETAIL CHART (Compare Page)
+// ══════════════════════════════════════════════
+function drawDetailChart(points, canvas, ctx, refPoints) {
+  const W = canvas.offsetWidth || 300, H = canvas.offsetHeight || 80;
+  canvas.width = W*devicePixelRatio; canvas.height = H*devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  ctx.clearRect(0,0,W,H);
   if (!points || points.length < 2) return;
 
-  const speeds = points.map(p => p.speed || 0);
-  const refSpeeds = refPoints ? refPoints.map(p => p.speed || 0) : [];
-  const allSpeeds = [...speeds, ...refSpeeds];
-  const maxS = Math.max(...allSpeeds, 1);
-  const minS = 0;
+  const speeds = points.map(p => p.speed||0);
+  const refSpeeds = refPoints ? refPoints.map(p=>p.speed||0) : [];
+  const maxS = Math.max(...speeds, ...(refSpeeds.length?refSpeeds:[0]), 1);
 
   function drawLine(pts, color, dashed) {
     if (pts.length < 2) return;
-    ctx.beginPath();
-    if (dashed) ctx.setLineDash([4, 3]);
-    else ctx.setLineDash([]);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.lineJoin = 'round';
-    pts.forEach((s, i) => {
-      const x = (i / (pts.length - 1)) * W;
-      const y = H - ((s - minS) / (maxS - minS)) * (H - 6) - 2;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+    ctx.beginPath(); ctx.setLineDash(dashed?[4,3]:[]); ctx.strokeStyle=color; ctx.lineWidth=2; ctx.lineJoin='round';
+    pts.forEach((s,i) => { const x=(i/(pts.length-1))*W, y=H-(s/maxS)*(H-6)-2; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.stroke(); ctx.setLineDash([]);
   }
-
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, 'rgba(0,229,160,0.3)');
-  grad.addColorStop(1, 'rgba(0,229,160,0)');
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'rgba(0,229,160,0.3)'); grad.addColorStop(1,'rgba(0,229,160,0)');
   ctx.beginPath();
-  speeds.forEach((s, i) => {
-    const x = (i / (speeds.length - 1)) * W;
-    const y = H - ((s - minS) / (maxS - minS)) * (H - 6) - 2;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
-  ctx.fillStyle = grad; ctx.fill();
-
-  if (refPoints) drawLine(refSpeeds, 'rgba(59,130,246,0.7)', true);
-  drawLine(speeds, '#00e5a0', false);
+  speeds.forEach((s,i)=>{ const x=(i/(speeds.length-1))*W,y=H-(s/maxS)*(H-6)-2; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+  if (refPoints) drawLine(refSpeeds,'rgba(59,130,246,0.7)',true);
+  drawLine(speeds,'#00e5a0',false);
 }
 
 // ══════════════════════════════════════════════
@@ -942,362 +822,170 @@ function drawSpeedChart(points, canvas, ctx, refPoints) {
 // ══════════════════════════════════════════════
 function saveRun() {
   if (!currentRun || currentRun.points.length < 2) return;
-
-  const run = {
-    id: currentRun.id,
-    startTs: currentRun.startTs,
-    duration: elapsed,
-    dist: currentRun.dist,
-    points: currentRun.points,
-    splits: currentRun.splits,
-    source: 'recorded'
-  };
-
-  runs.unshift(run);
-  saveRuns();
-  exportGPX(run);
-  exportJSON(run);
-
+  const run = { id:currentRun.id, startTs:currentRun.startTs, duration:elapsed, dist:currentRun.dist, elevGain:currentRun.elevGain, points:currentRun.points, splits:currentRun.splits, source:'recorded' };
+  runs.unshift(run); saveRuns();
+  exportGPX(run); exportJSON(run);
   toast('Lauf gespeichert & GPX/JSON heruntergeladen');
   document.getElementById('btnSave').disabled = true;
 }
-
 function exportGPX(run) {
-  const pts = run.points.map(p => {
-    return `    <trkpt lat="${p.lat.toFixed(7)}" lon="${p.lng.toFixed(7)}">
-      <time>${new Date(p.ts).toISOString()}</time>
-      <extensions>
-        <speed>${(p.speed || 0).toFixed(2)}</speed>
-      </extensions>
-    </trkpt>`;
-  }).join('\n');
-
-  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="LaufTracker" xmlns="http://www.topografix.com/GPX/1/1"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <metadata>
-    <name>Lauf ${fmtDate(run.startTs)}</name>
-    <time>${new Date(run.startTs).toISOString()}</time>
-  </metadata>
-  <trk>
-    <name>Lauf ${fmtDate(run.startTs)}</name>
-    <trkseg>
-${pts}
-    </trkseg>
-  </trk>
-</gpx>`;
-
+  const pts = run.points.map(p =>
+    `    <trkpt lat="${p.lat.toFixed(7)}" lon="${p.lng.toFixed(7)}">${p.alt!=null?`\n      <ele>${p.alt.toFixed(1)}</ele>`:''}\n      <time>${new Date(p.ts).toISOString()}</time>\n    </trkpt>`
+  ).join('\n');
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="LaufTracker" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>Lauf ${fmtDate(run.startTs)}</name><time>${new Date(run.startTs).toISOString()}</time></metadata>\n  <trk><name>Lauf ${fmtDate(run.startTs)}</name><trkseg>\n${pts}\n  </trkseg></trk>\n</gpx>`;
   download(`lauf_${run.id}.gpx`, gpx, 'application/gpx+xml');
 }
-
-function exportJSON(run) {
-  download(`lauf_${run.id}.json`, JSON.stringify(run, null, 2), 'application/json');
-}
-
+function exportJSON(run) { download(`lauf_${run.id}.json`, JSON.stringify(run,null,2), 'application/json'); }
 function download(filename, content, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(new Blob([content],{type})), download:filename});
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
 // ══════════════════════════════════════════════
 //  IMPORT
 // ══════════════════════════════════════════════
 function importJSON(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
+  const file = event.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = e => {
     try {
       const run = JSON.parse(e.target.result);
-      if (!run.points || !run.startTs) throw new Error('Ungültiges Format');
-      run.source = run.source || 'json';
-      if (!runs.find(r => r.id === run.id)) {
-        runs.unshift(run);
-        saveRuns();
-        toast('Lauf importiert: ' + fmtDate(run.startTs));
-        renderHistory();
-      } else {
-        toast('Lauf bereits vorhanden');
-      }
-    } catch(err) { toast('Fehler: ' + err.message); }
+      if (!run.points||!run.startTs) throw new Error('Ungültiges Format');
+      run.source = run.source||'json';
+      if (!runs.find(x=>x.id===run.id)) { runs.unshift(run); saveRuns(); toast('Lauf importiert'); renderHistory(); }
+      else toast('Lauf bereits vorhanden');
+    } catch(err) { toast('Fehler: '+err.message); }
   };
-  reader.readAsText(file);
-  event.target.value = '';
+  r.readAsText(file); event.target.value='';
 }
-
 function importGPX(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
+  const file = event.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = e => {
     try {
-      const parser = new DOMParser();
-      const xml = parser.parseFromString(e.target.result, 'text/xml');
+      const xml = new DOMParser().parseFromString(e.target.result,'text/xml');
       const trkpts = Array.from(xml.querySelectorAll('trkpt'));
-      if (!trkpts.length) throw new Error('Keine Trackpunkte gefunden');
-
-      const points = [];
-      let prevPt = null;
+      if (!trkpts.length) throw new Error('Keine Trackpunkte');
+      let prevPt=null, cumDist=0, elevGain=0, lastSplitKm=0;
+      const points=[], splits=[];
       trkpts.forEach(pt => {
-        const lat = parseFloat(pt.getAttribute('lat'));
-        const lng = parseFloat(pt.getAttribute('lon'));
-        const timeEl = pt.querySelector('time');
-        const ts = timeEl ? new Date(timeEl.textContent).getTime() : Date.now();
-        const speedEl = pt.querySelector('speed');
-        let speed = speedEl ? parseFloat(speedEl.textContent) : 0;
-
-        if (speed === 0 && prevPt) {
-          const d = haversine(prevPt.lat, prevPt.lng, lat, lng);
-          const dt = (ts - prevPt.ts) / 1000;
-          speed = dt > 0 ? Math.min((d / dt) * 3600, 40) : 0;
+        const lat=parseFloat(pt.getAttribute('lat')), lng=parseFloat(pt.getAttribute('lon'));
+        const timeEl=pt.querySelector('time'), ts=timeEl?new Date(timeEl.textContent).getTime():Date.now();
+        const eleEl=pt.querySelector('ele'), alt=eleEl?parseFloat(eleEl.textContent):null;
+        let speed=0;
+        if (prevPt) {
+          const d=haversine(prevPt.lat,prevPt.lng,lat,lng), dt=(ts-prevPt.ts)/1000;
+          speed=dt>0?Math.min((d/dt)*3600,40):0;
+          cumDist+=d;
+          if (alt!=null&&prevPt.alt!=null) { const dA=alt-prevPt.alt; if(dA>=ALT_MIN_DELTA) elevGain+=dA; }
+          const km=Math.floor(cumDist);
+          if (km>lastSplitKm) { splits.push({km,elapsed:(ts-trkpts[0].querySelector('time')?new Date(trkpts[0].querySelector('time').textContent).getTime():ts-ts)/1000}); lastSplitKm=km; }
         }
-        points.push({ lat, lng, ts, speed });
-        prevPt = { lat, lng, ts };
+        points.push({lat,lng,ts,speed,alt,altRate:0});
+        prevPt={lat,lng,ts,alt};
       });
-
-      let dist = 0;
-      for (let i = 1; i < points.length; i++)
-        dist += haversine(points[i-1].lat, points[i-1].lng, points[i].lat, points[i].lng);
-
-      const splits = [];
-      let cumDist = 0, lastSplitKm = 0;
-      for (let i = 1; i < points.length; i++) {
-        cumDist += haversine(points[i-1].lat, points[i-1].lng, points[i].lat, points[i].lng);
-        const km = Math.floor(cumDist);
-        if (km > lastSplitKm) {
-          const elapsedSec = (points[i].ts - points[0].ts) / 1000;
-          splits.push({ km, elapsed: elapsedSec });
-          lastSplitKm = km;
-        }
-      }
-
-      const duration = (points[points.length-1].ts - points[0].ts);
-      const run = {
-        id: points[0].ts,
-        startTs: points[0].ts,
-        duration,
-        dist,
-        points,
-        splits,
-        source: 'gpx',
-        name: xml.querySelector('name') ? xml.querySelector('name').textContent : file.name
-      };
-
-      if (!runs.find(r => r.id === run.id)) {
-        runs.unshift(run);
-        saveRuns();
-        toast('GPX importiert: ' + dist.toFixed(2) + ' km');
-        renderHistory();
-      } else {
-        toast('Track bereits vorhanden');
-      }
-    } catch(err) { toast('GPX-Fehler: ' + err.message); }
+      const run={id:points[0].ts,startTs:points[0].ts,duration:(points[points.length-1].ts-points[0].ts),dist:cumDist,elevGain,points,splits,source:'gpx',name:xml.querySelector('name')?.textContent||file.name};
+      if (!runs.find(x=>x.id===run.id)) { runs.unshift(run); saveRuns(); toast('GPX importiert: '+cumDist.toFixed(2)+' km'); renderHistory(); }
+      else toast('Track bereits vorhanden');
+    } catch(err) { toast('GPX-Fehler: '+err.message); }
   };
-  reader.readAsText(file);
-  event.target.value = '';
+  r.readAsText(file); event.target.value='';
 }
 
 // ══════════════════════════════════════════════
 //  HISTORY
 // ══════════════════════════════════════════════
 function renderHistory() {
-  const list = document.getElementById('runList');
-  const sub  = document.getElementById('historySub');
-
+  const list=document.getElementById('runList'), sub=document.getElementById('historySub');
   if (!runs.length) {
-    sub.textContent = 'Keine Läufe gespeichert';
-    list.innerHTML = `<div class="empty-state">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-      </svg>
-      <p>Starte deinen ersten Lauf<br>oder importiere eine GPX-Datei</p>
-    </div>`;
+    sub.textContent='Keine Läufe gespeichert';
+    list.innerHTML=`<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg><p>Starte deinen ersten Lauf<br>oder importiere eine GPX-Datei</p></div>`;
     return;
   }
-
-  const totalKm = runs.reduce((a,r) => a + r.dist, 0);
-  sub.textContent = `${runs.length} Läufe · ${totalKm.toFixed(1)} km gesamt`;
-
-  list.innerHTML = runs.map(run => {
-    const dur = run.duration ? fmtTime(run.duration / 1000) : '–:––:––';
-    const pace = run.duration && run.dist > 0
-      ? fmtPace((run.duration / 1000) / run.dist) : '–:––';
-    const isRef = run.id === activeRefRunId;
-    return `<div class="run-card ${isRef ? 'selected' : ''}" id="card-${run.id}">
-      <div class="run-card-top">
-        <div class="run-card-date">${run.name || fmtDate(run.startTs)}</div>
-        <div class="run-card-type ${run.source === 'gpx' ? 'gpx' : ''}">${run.source === 'gpx' ? 'GPX' : run.source === 'json' ? 'JSON' : 'Aufnahme'}</div>
-      </div>
+  sub.textContent=`${runs.length} Läufe · ${runs.reduce((a,r)=>a+r.dist,0).toFixed(1)} km gesamt`;
+  list.innerHTML=runs.map(run=>{
+    const dur=run.duration?fmtTime(run.duration/1000):'–:––:––';
+    const pace=run.duration&&run.dist>0?fmtPace((run.duration/1000)/run.dist):'–:––';
+    const isRef=run.id===activeRefRunId;
+    return `<div class="run-card ${isRef?'selected':''}" id="card-${run.id}">
+      <div class="run-card-top"><div class="run-card-date">${run.name||fmtDate(run.startTs)}</div><div class="run-card-type ${run.source==='gpx'?'gpx':''}">${run.source==='gpx'?'GPX':run.source==='json'?'JSON':'Aufnahme'}</div></div>
       <div class="run-card-stats">
         <div class="run-stat"><span class="run-stat-val">${run.dist.toFixed(2)}</span> <span class="run-stat-lbl">km</span></div>
         <div class="run-stat"><span class="run-stat-val">${dur}</span> <span class="run-stat-lbl">Zeit</span></div>
         <div class="run-stat"><span class="run-stat-val">${pace}</span> <span class="run-stat-lbl">min/km</span></div>
+        ${run.elevGain?`<div class="run-stat"><span class="run-stat-val">${Math.round(run.elevGain)}</span> <span class="run-stat-lbl">m↑</span></div>`:''}
       </div>
       <div class="run-card-actions">
-        <button class="run-action-btn primary" onclick="openDetail(${run.id})">Details & Karte</button>
-        <button class="run-action-btn ${isRef ? 'active-btn' : ''}" onclick="setAsRef(${run.id})" style="${isRef ? 'color:var(--accent);border-color:var(--accent)' : ''}">
-          ${isRef ? '★ Referenz' : '☆ Als Referenz'}
-        </button>
+        <button class="run-action-btn primary" onclick="openDetail(${run.id})">Details</button>
+        <button class="run-action-btn ${isRef?'':''}'" onclick="setAsRef(${run.id})">${isRef?'★ Ref':'☆ Ref'}</button>
         <button class="run-action-btn" onclick="reexportRun(${run.id})">↓ GPX</button>
         <button class="run-action-btn danger" onclick="deleteRun(${run.id})">✕</button>
       </div>
     </div>`;
   }).join('');
 }
-
 function setAsRef(id) {
-  activeRefRunId = activeRefRunId === id ? null : id;
+  activeRefRunId = activeRefRunId===id ? null : id;
   refTrackVisible = !!activeRefRunId;
-
-  if (tRefLine) {
-    if (activeRefRunId) {
-      const run = runs.find(r => r.id === id);
-      tRefLine.setLatLngs(run ? run.points.map(p=>[p.lat,p.lng]) : []);
-    } else {
-      tRefLine.setLatLngs([]);
-      if (tRefMarker && tMap) tMap.removeLayer(tRefMarker);
-      tRefMarker = null;
-    }
-  }
-
-  document.getElementById('btnRefTrack').className = 'map-ctrl-btn' + (activeRefRunId ? ' active-btn' : '');
-  toast(activeRefRunId ? 'Referenztrack gesetzt' : 'Referenztrack entfernt');
+  if (tRefLine) { if(activeRefRunId){const run=runs.find(r=>r.id===id);tRefLine.setLatLngs(run?run.points.map(p=>[p.lat,p.lng]):[]);}else{tRefLine.setLatLngs([]);if(tRefMarker&&tMap)tMap.removeLayer(tRefMarker);tRefMarker=null;} }
+  document.getElementById('btnRefTrack').className='map-ctrl-btn'+(activeRefRunId?' active-btn':'');
+  toast(activeRefRunId?'Referenztrack gesetzt':'Referenztrack entfernt');
   renderHistory();
 }
-
 function deleteRun(id) {
   if (!confirm('Lauf wirklich löschen?')) return;
-  runs = runs.filter(r => r.id !== id);
-  saveRuns();
-  if (activeRefRunId === id) { activeRefRunId = null; if (tRefLine) tRefLine.setLatLngs([]); }
+  runs=runs.filter(r=>r.id!==id); saveRuns();
+  if (activeRefRunId===id){activeRefRunId=null;if(tRefLine)tRefLine.setLatLngs([]);}
   renderHistory();
 }
-
-function reexportRun(id) {
-  const run = runs.find(r => r.id === id);
-  if (!run) return;
-  exportGPX(run);
-  toast('GPX exportiert');
-}
+function reexportRun(id) { const run=runs.find(r=>r.id===id); if(run){exportGPX(run);toast('GPX exportiert');} }
 
 // ══════════════════════════════════════════════
-//  DETAIL / COMPARE VIEW
+//  DETAIL VIEW
 // ══════════════════════════════════════════════
 function openDetail(id) {
-  const run = runs.find(r => r.id === id);
-  if (!run) return;
-
+  const run=runs.find(r=>r.id===id); if(!run) return;
   showPage('compare');
-  setTimeout(() => {
-    initCompareMap();
-    renderDetailView(run);
-  }, 120);
+  setTimeout(()=>{ initCompareMap(); renderDetailView(run); },120);
 }
-
 function renderDetailView(run) {
-  document.getElementById('compareTitle').textContent = run.name || fmtDate(run.startTs);
-
-  if (cMap) cMap.eachLayer(l => { if (l instanceof L.Polyline || l instanceof L.CircleMarker) cMap.removeLayer(l); });
-
-  const speeds = run.points.map(p => p.speed || 0);
-  const minS = Math.min(...speeds);
-  const maxS = Math.max(...speeds, 1);
-
-  if (cMap && run.points.length > 1) {
-    for (let i = 1; i < run.points.length; i++) {
-      const color = speedColor(speeds[i], minS, maxS);
-      L.polyline([
-        [run.points[i-1].lat, run.points[i-1].lng],
-        [run.points[i].lat, run.points[i].lng]
-      ], { color, weight: 5, opacity: 0.9 }).addTo(cMap);
-    }
-
-    L.circleMarker([run.points[0].lat, run.points[0].lng],
-      { radius: 7, color:'#00e5a0', fillColor:'#00e5a0', fillOpacity:1 }).addTo(cMap)
-      .bindPopup('Start');
-    L.circleMarker([run.points[run.points.length-1].lat, run.points[run.points.length-1].lng],
-      { radius: 7, color:'#ef4444', fillColor:'#ef4444', fillOpacity:1 }).addTo(cMap)
-      .bindPopup('Ende');
-
-    const latlngs = run.points.map(p => [p.lat, p.lng]);
-    cMap.fitBounds(L.latLngBounds(latlngs), { padding: [20, 20] });
+  document.getElementById('compareTitle').textContent=run.name||fmtDate(run.startTs);
+  if (cMap) cMap.eachLayer(l=>{ if(l instanceof L.Polyline||l instanceof L.CircleMarker) cMap.removeLayer(l); });
+  const speeds=run.points.map(p=>p.speed||0), minS=Math.min(...speeds), maxS=Math.max(...speeds,1);
+  if (cMap&&run.points.length>1) {
+    for(let i=1;i<run.points.length;i++) L.polyline([[run.points[i-1].lat,run.points[i-1].lng],[run.points[i].lat,run.points[i].lng]],{color:speedColor(speeds[i],minS,maxS),weight:5,opacity:0.9}).addTo(cMap);
+    L.circleMarker([run.points[0].lat,run.points[0].lng],{radius:7,color:'#00e5a0',fillColor:'#00e5a0',fillOpacity:1}).addTo(cMap).bindPopup('Start');
+    L.circleMarker([run.points[run.points.length-1].lat,run.points[run.points.length-1].lng],{radius:7,color:'#ef4444',fillColor:'#ef4444',fillOpacity:1}).addTo(cMap).bindPopup('Ende');
+    cMap.fitBounds(L.latLngBounds(run.points.map(p=>[p.lat,p.lng])),{padding:[20,20]});
   }
-
-  document.getElementById('compareLegend').innerHTML = `
-    <div class="legend-item"><div class="legend-dot" style="background:#00e5a0"></div> Start</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> Ende</div>
-    <div class="legend-item" style="flex:1">
-      <div style="flex:1">
-        <div class="speed-gradient-bar"></div>
-        <div class="speed-gradient-labels"><span>${minS.toFixed(1)}</span><span>${maxS.toFixed(1)} km/h</span></div>
-      </div>
-    </div>`;
-
-  const dur = run.duration ? run.duration / 1000 : (run.points[run.points.length-1].ts - run.points[0].ts) / 1000;
-  const avgSpeed = run.dist > 0 && dur > 0 ? (run.dist / dur) * 3600 : 0;
-  const pace = run.dist > 0 && dur > 0 ? fmtPace(dur / run.dist) : '–:––';
-  const kcal = Math.round(8 * WEIGHT_KG * dur / 3600);
-
-  document.getElementById('detailStats').innerHTML = `
+  document.getElementById('compareLegend').innerHTML=`<div class="legend-item"><div class="legend-dot" style="background:#00e5a0"></div>Start</div><div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Ende</div><div class="legend-item" style="flex:1"><div class="speed-gradient-bar"></div><div class="speed-gradient-labels"><span>${minS.toFixed(1)}</span><span>${maxS.toFixed(1)} km/h</span></div></div>`;
+  const dur=run.duration?run.duration/1000:(run.points[run.points.length-1].ts-run.points[0].ts)/1000;
+  const avgSpd=run.dist>0&&dur>0?(run.dist/dur)*3600:0;
+  const pace=run.dist>0&&dur>0?fmtPace(dur/run.dist):'–:––';
+  document.getElementById('detailStats').innerHTML=`
     <div class="detail-stat"><div class="detail-stat-val">${run.dist.toFixed(2)}</div><div class="detail-stat-lbl">km</div></div>
     <div class="detail-stat"><div class="detail-stat-val">${fmtTime(dur)}</div><div class="detail-stat-lbl">Zeit</div></div>
     <div class="detail-stat"><div class="detail-stat-val">${pace}</div><div class="detail-stat-lbl">min/km</div></div>
-    <div class="detail-stat"><div class="detail-stat-val">${avgSpeed.toFixed(1)}</div><div class="detail-stat-lbl">km/h ø</div></div>
+    <div class="detail-stat"><div class="detail-stat-val">${avgSpd.toFixed(1)}</div><div class="detail-stat-lbl">km/h ø</div></div>
     <div class="detail-stat"><div class="detail-stat-val">${maxS.toFixed(1)}</div><div class="detail-stat-lbl">km/h max</div></div>
-    <div class="detail-stat"><div class="detail-stat-val">${kcal}</div><div class="detail-stat-lbl">kcal</div></div>`;
-
-  const cc = document.getElementById('compareCanvas');
-  const cctx = cc.getContext('2d');
-  const refRun = activeRefRunId ? runs.find(r => r.id === activeRefRunId) : null;
-  const refPts = (refRun && refRun.id !== run.id) ? refRun.points : null;
-  drawSpeedChart(run.points, cc, cctx, refPts);
-
-  const splitsEl = document.getElementById('compareSplits');
-  if (run.splits && run.splits.length) {
-    splitsEl.innerHTML = run.splits.map((s, i) => {
-      const prevElapsed = i > 0 ? run.splits[i-1].elapsed : 0;
-      const splitTime = s.elapsed - prevElapsed;
-      return `<div class="split-row">
-        <span class="split-km">km ${s.km}</span>
-        <span>${fmtTime(splitTime)}</span>
-        <span class="split-pace">${fmtPace(splitTime)}/km</span>
-      </div>`;
-    }).join('');
-  } else {
-    splitsEl.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Keine Splits verfügbar</div>';
-  }
-
-  document.getElementById('compareActions').innerHTML = `
-    <button class="run-action-btn primary" onclick="reexportRun(${run.id});toast('GPX exportiert')">↓ GPX</button>
-    <button class="run-action-btn primary" onclick="exportJSON(runs.find(r=>r.id===${run.id}));toast('JSON exportiert')">↓ JSON</button>
-    <button class="run-action-btn ${activeRefRunId===run.id?'danger':''}" onclick="setAsRef(${run.id})">
-      ${activeRefRunId === run.id ? '★ Referenz entfernen' : '☆ Als Referenz setzen'}
-    </button>`;
+    <div class="detail-stat"><div class="detail-stat-val">${run.elevGain?Math.round(run.elevGain):0}</div><div class="detail-stat-lbl">m↑ Hm</div></div>`;
+  const cc=document.getElementById('compareCanvas'), cctx=cc.getContext('2d');
+  const refRun=activeRefRunId?runs.find(r=>r.id===activeRefRunId):null;
+  drawDetailChart(run.points, cc, cctx, refRun&&refRun.id!==run.id?refRun.points:null);
+  const splitsEl=document.getElementById('compareSplits');
+  if (run.splits?.length) {
+    splitsEl.innerHTML=run.splits.map((s,i)=>{ const prev=i>0?run.splits[i-1].elapsed:0, st=s.elapsed-prev; return `<div class="split-row"><span class="split-km">km ${s.km}</span><span>${fmtTime(st)}</span><span class="split-pace">${fmtPace(st)}/km</span></div>`; }).join('');
+  } else splitsEl.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">Keine Splits</div>';
+  document.getElementById('compareActions').innerHTML=`<button class="run-action-btn primary" onclick="reexportRun(${run.id})">↓ GPX</button><button class="run-action-btn primary" onclick="exportJSON(runs.find(r=>r.id===${run.id}))">↓ JSON</button><button class="run-action-btn" onclick="setAsRef(${run.id})">${activeRefRunId===run.id?'★ Ref entfernen':'☆ Als Referenz'}</button>`;
 }
 
 // ══════════════════════════════════════════════
 //  STORAGE
 // ══════════════════════════════════════════════
-function loadRuns() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
-  catch { return []; }
-}
-function saveRuns() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(runs)); }
-  catch(e) { toast('Speicherfehler: ' + e.message); }
-}
+function loadRuns() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); } catch { return []; } }
+function saveRuns() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(runs)); } catch(e) { toast('Speicherfehler: '+e.message); } }
 
-// ══════════════════════════════════════════════
-//  BOOT
-// ══════════════════════════════════════════════
-window.addEventListener('load', () => {
-  initTrackerMap();
-});
+window.addEventListener('load', () => { initTrackerMap(); });
 </script>
 </body>
 </html>
