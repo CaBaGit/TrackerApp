@@ -754,26 +754,12 @@ async function fetchRoute() {
   const url = `https://api.openrouteservice.org/v2/directions/${profile}/geojson`;
 
   try {
-    // ORS Request – foot-hiking bevorzugt Wanderwege via preference + options
     const body = {
       coordinates,
       instructions: false,
       geometry_simplify: false,
-      // 'shortest' zwingt ORS dazu Wanderwege zu nehmen statt Umweg auf der Straße
       preference: planProfile === 'foot' ? 'shortest' : 'recommended',
     };
-    // Für Wandern: Straßen vermeiden, Wege bevorzugen
-    if (planProfile === 'foot') {
-      body.options = {
-        avoid_features: ['highways', 'tollways'],
-        profile_params: {
-          weightings: {
-            green: 1.0,      // Grünflächen/Natur bevorzugen
-            quiet: 0.5       // ruhige Wege bevorzugen
-          }
-        }
-      };
-    }
     const res = await fetch(url, {
       method: 'POST',
       headers: {
