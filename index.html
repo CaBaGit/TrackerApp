@@ -212,6 +212,27 @@ body.offline #offlineBadge { display:block; }
 .speed-gradient-bar { height:6px; border-radius:3px; background:linear-gradient(90deg,#ef4444,#f97316,#eab308,#00e5a0); margin:4px 0; }
 .speed-gradient-labels { display:flex; justify-content:space-between; font-size:9px; color:var(--muted); }
 
+/* ── PLAN PAGE ── */
+#page-plan { background:var(--bg); overflow:hidden; }
+#planMap { flex:1; min-height:0; }
+#planControls {
+  background:var(--bg); padding:10px 14px 8px; flex-shrink:0;
+  border-top:1px solid var(--border);
+}
+.plan-toolbar { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
+.plan-profile-btn { padding:7px 14px; border-radius:20px; font-size:12px; font-weight:700; border:1px solid var(--border); background:var(--card); color:var(--muted); cursor:pointer; transition:all 0.15s; }
+.plan-profile-btn.active { background:var(--accent); color:#001a0d; border-color:var(--accent); }
+.plan-spacer { flex:1; }
+.plan-clear-btn { padding:7px 12px; border-radius:20px; font-size:12px; font-weight:600; border:1px solid var(--border); background:none; color:var(--muted); cursor:pointer; }
+.plan-info-row { display:flex; align-items:center; gap:14px; margin-bottom:8px; flex-wrap:wrap; }
+.plan-stat-val { font-family:var(--mono); font-weight:700; font-size:18px; color:var(--accent); }
+.plan-stat-lbl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-left:3px; }
+.plan-hint { font-size:11px; color:var(--muted); text-align:center; padding:3px 0 6px; }
+.plan-hint.hidden { display:none; }
+.btn-plan-start { width:100%; padding:15px; border:none; border-radius:var(--r); background:linear-gradient(135deg,#00e5a0,#00b87a); color:#001a0d; font-size:14px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; transition:transform 0.1s,opacity 0.2s; margin-bottom:4px; }
+.btn-plan-start:disabled { opacity:0.3; cursor:not-allowed; }
+.btn-plan-start:active { transform:scale(0.97); }
+
 #toast { position:fixed; bottom:70px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--card); border:1px solid var(--border); color:var(--text); padding:10px 18px; border-radius:20px; font-size:13px; z-index:9999; opacity:0; transition:opacity 0.3s,transform 0.3s; pointer-events:none; white-space:nowrap; }
 #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
@@ -402,11 +423,43 @@ body.offline #offlineBadge { display:block; }
   </div>
 </div>
 
+<!-- ════════════════ PLAN ════════════════ -->
+<div class="page" id="page-plan">
+  <div id="planMap"></div>
+  <div id="planControls">
+    <div class="plan-toolbar">
+      <button class="plan-profile-btn active" id="planBtnFoot" onclick="setPlanProfile('foot')">🚶 Fuß</button>
+      <button class="plan-profile-btn"        id="planBtnBike" onclick="setPlanProfile('bike')">🚴 Fahrrad</button>
+      <div class="plan-spacer"></div>
+      <button class="plan-clear-btn" onclick="clearPlan()">✕ Löschen</button>
+    </div>
+    <div class="plan-info-row">
+      <div>
+        <span class="plan-stat-val" id="planDist">0.00</span>
+        <span class="plan-stat-lbl">km</span>
+      </div>
+      <div>
+        <span class="plan-stat-val" id="planPoints">0</span>
+        <span class="plan-stat-lbl">Wegpunkte</span>
+      </div>
+      <div id="planLoadingIndicator" style="display:none;font-size:11px;color:var(--muted)">⏳ Route wird berechnet…</div>
+    </div>
+    <div class="plan-hint" id="planHint">Auf die Karte tippen um Wegpunkte zu setzen</div>
+    <button class="btn-plan-start" id="btnPlanStart" onclick="startPlannedRoute()" disabled>
+      Route als Referenz laden → Tracker
+    </button>
+  </div>
+</div>
+
 <!-- NAV -->
 <div id="nav">
   <button class="nav-btn active" id="nav-tracker" onclick="showPage('tracker')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="9" stroke-dasharray="3 2"/></svg>
     Tracker
+  </button>
+  <button class="nav-btn" id="nav-plan" onclick="showPage('plan')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h18M3 6h18M3 18h12"/><circle cx="19" cy="18" r="2"/><path d="M19 16v-4"/></svg>
+    Planen
   </button>
   <button class="nav-btn" id="nav-history" onclick="showPage('history')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
@@ -470,20 +523,31 @@ const slider = document.getElementById('viewSlider');
 const dots   = document.querySelectorAll('.view-dot');
 
 let swipeStartX = 0, swipeStartY = 0, swiping = false, swipeDx = 0;
+let swipeAllowed = false; // nur true wenn Touch im unteren Bereich startet
 
 function goToView(idx) {
   currentView = Math.max(0, Math.min(TOTAL_VIEWS - 1, idx));
   slider.style.transform = `translateX(-${currentView * 100}%)`;
   dots.forEach((d, i) => d.classList.toggle('active', i === currentView));
-  // Karte neu zeichnen wenn sichtbar
   setTimeout(() => {
     if (currentView === 0 && tMap)  tMap.invalidateSize();
     if (currentView === 1 && tMap2) tMap2.invalidateSize();
   }, 350);
 }
 
+// Swipe nur erlaubt wenn Touch NICHT auf einer Leaflet-Karte startet
+function isTouchOnMap(el) {
+  while (el) {
+    if (el.id === 'map' || el.id === 'map2') return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+
 const swipeEl = document.getElementById('trackerSwipe');
 swipeEl.addEventListener('touchstart', e => {
+  swipeAllowed = !isTouchOnMap(e.target);
+  if (!swipeAllowed) return;
   swipeStartX = e.touches[0].clientX;
   swipeStartY = e.touches[0].clientY;
   swiping = true; swipeDx = 0;
@@ -491,18 +555,16 @@ swipeEl.addEventListener('touchstart', e => {
 }, {passive:true});
 
 swipeEl.addEventListener('touchmove', e => {
-  if (!swiping) return;
+  if (!swiping || !swipeAllowed) return;
   swipeDx = e.touches[0].clientX - swipeStartX;
   const dy = e.touches[0].clientY - swipeStartY;
-  // Nur horizontale Swipes verarbeiten
-  if (Math.abs(swipeDx) < Math.abs(dy)) return;
-  const base = currentView * 100;
-  const pct  = (swipeDx / swipeEl.offsetWidth) * 100;
-  slider.style.transform = `translateX(calc(-${base}% + ${swipeDx}px))`;
+  // Nur horizontale Swipes verarbeiten, vertikales Scrollen ignorieren
+  if (Math.abs(swipeDx) < Math.abs(dy)) { swiping = false; goToView(currentView); return; }
+  slider.style.transform = `translateX(calc(-${currentView * 100}% + ${swipeDx}px))`;
 }, {passive:true});
 
 swipeEl.addEventListener('touchend', () => {
-  if (!swiping) return;
+  if (!swiping || !swipeAllowed) return;
   swiping = false;
   slider.style.transition = '';
   if      (swipeDx < -50 && currentView < TOTAL_VIEWS - 1) goToView(currentView + 1);
@@ -599,6 +661,166 @@ function showPage(name) {
   if (name==='tracker') { initTrackerMap(); setTimeout(()=>{ if(tMap) tMap.invalidateSize(); if(tMap2) tMap2.invalidateSize(); },200); }
   if (name==='history') renderHistory();
   if (name==='compare') setTimeout(()=>{ if(cMap) cMap.invalidateSize(); },100);
+  if (name==='plan')    { initPlanMap(); setTimeout(()=>{ if(pMap) pMap.invalidateSize(); },200); }
+}
+
+// ══════════════════════════════════════════════
+//  ROUTE PLANNING
+// ══════════════════════════════════════════════
+let pMap = null;
+let planProfile = 'foot'; // 'foot' or 'bike'
+let planWaypoints = [];   // [{lat,lng}]
+let planMarkers = [];
+let planRouteLine = null;
+let planRoutePoints = []; // decoded OSRM geometry
+let planDist = 0;
+let planRouting = false;
+
+const OSRM_PROFILES = {
+  foot: 'https://router.project-osrm.org/route/v1/foot/',
+  bike: 'https://router.project-osrm.org/route/v1/bike/'
+};
+
+function initPlanMap() {
+  if (pMap) return;
+  pMap = L.map('planMap', {zoomControl:false, attributionControl:false}).setView([48.1,11.6],14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(pMap);
+  L.control.attribution({prefix:'© OSM'}).addTo(pMap);
+  planRouteLine = L.polyline([],{color:'#3b82f6',weight:5,opacity:0.85}).addTo(pMap);
+
+  // Zoom to current position
+  navigator.geolocation.getCurrentPosition(p=>{
+    pMap.setView([p.coords.latitude,p.coords.longitude],15);
+  },()=>{});
+
+  // Tap to add waypoint
+  pMap.on('click', e => addWaypoint(e.latlng.lat, e.latlng.lng));
+}
+
+function setPlanProfile(profile) {
+  planProfile = profile;
+  document.getElementById('planBtnFoot').classList.toggle('active', profile==='foot');
+  document.getElementById('planBtnBike').classList.toggle('active', profile==='bike');
+  // Recalculate route with new profile
+  if (planWaypoints.length >= 2) fetchRoute();
+}
+
+function addWaypoint(lat, lng) {
+  planWaypoints.push({lat, lng});
+
+  // Marker: first = grün, rest = blau, last = rot (wird dynamisch gesetzt)
+  const idx = planWaypoints.length - 1;
+  const color = idx === 0 ? '#00e5a0' : '#3b82f6';
+  const marker = L.circleMarker([lat,lng], {
+    radius:8, color:'#fff', fillColor:color, fillOpacity:1, weight:2
+  }).addTo(pMap);
+  // Long-press / double-tap to remove last waypoint
+  marker.on('dblclick', () => removeLastWaypoint());
+  planMarkers.push(marker);
+
+  updatePlanColors();
+  updatePlanUI();
+
+  if (planWaypoints.length >= 2) fetchRoute();
+}
+
+function removeLastWaypoint() {
+  if (!planWaypoints.length) return;
+  planWaypoints.pop();
+  const m = planMarkers.pop();
+  if (m && pMap) pMap.removeLayer(m);
+  updatePlanColors();
+  updatePlanUI();
+  if (planWaypoints.length >= 2) fetchRoute();
+  else { planRouteLine.setLatLngs([]); planRoutePoints=[]; planDist=0; updatePlanUI(); }
+}
+
+function updatePlanColors() {
+  planMarkers.forEach((m,i)=>{
+    const color = i===0 ? '#00e5a0' : i===planMarkers.length-1 ? '#ef4444' : '#3b82f6';
+    m.setStyle({fillColor:color});
+  });
+}
+
+async function fetchRoute() {
+  if (planWaypoints.length < 2 || planRouting) return;
+  planRouting = true;
+  document.getElementById('planLoadingIndicator').style.display = 'block';
+
+  const coords = planWaypoints.map(p=>`${p.lng},${p.lat}`).join(';');
+  const url = OSRM_PROFILES[planProfile] + coords + '?overview=full&geometries=geojson';
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('OSRM Fehler');
+    const data = await res.json();
+    if (!data.routes || !data.routes[0]) throw new Error('Keine Route gefunden');
+
+    const route = data.routes[0];
+    planDist = route.distance / 1000; // km
+    // GeoJSON coords are [lng,lat] – flip for Leaflet
+    planRoutePoints = route.geometry.coordinates.map(c=>({lat:c[1],lng:c[0],ts:0,speed:0,alt:null,altRate:0}));
+    planRouteLine.setLatLngs(planRoutePoints.map(p=>[p.lat,p.lng]));
+    pMap.fitBounds(planRouteLine.getBounds(), {padding:[30,30]});
+  } catch(e) {
+    toast('Route: ' + e.message);
+    planDist = 0; planRoutePoints = [];
+  }
+
+  planRouting = false;
+  document.getElementById('planLoadingIndicator').style.display = 'none';
+  updatePlanUI();
+}
+
+function updatePlanUI() {
+  document.getElementById('planDist').textContent    = planDist.toFixed(2);
+  document.getElementById('planPoints').textContent  = planWaypoints.length;
+  document.getElementById('planHint').classList.toggle('hidden', planWaypoints.length > 0);
+  document.getElementById('btnPlanStart').disabled   = planRoutePoints.length < 2;
+}
+
+function clearPlan() {
+  planWaypoints = [];
+  planMarkers.forEach(m=>{ if(pMap) pMap.removeLayer(m); });
+  planMarkers = [];
+  planRouteLine.setLatLngs([]);
+  planRoutePoints = []; planDist = 0;
+  updatePlanUI();
+}
+
+function startPlannedRoute() {
+  if (planRoutePoints.length < 2) return;
+
+  // Build a fake "run" object as reference track
+  const now = Date.now();
+  const refRun = {
+    id: now,
+    startTs: now,
+    duration: null,
+    dist: planDist,
+    elevGain: 0,
+    points: planRoutePoints.map((p,i)=>({...p, ts: now + i*1000})),
+    splits: [],
+    source: 'plan',
+    name: `Geplante Route ${planDist.toFixed(2)} km`
+  };
+
+  // Save to runs list & set as active reference
+  if (!runs.find(r=>r.id===refRun.id)) { runs.unshift(refRun); saveRuns(); }
+  activeRefRunId = refRun.id;
+  refTrackVisible = true;
+
+  // Load into tracker map
+  initTrackerMap();
+  if (tRefLine) tRefLine.setLatLngs(refRun.points.map(p=>[p.lat,p.lng]));
+  document.getElementById('btnRefTrack').className = 'map-ctrl-btn active-btn';
+
+  toast('Route geladen als Referenztrack ✓');
+  showPage('tracker');
+  setTimeout(()=>{
+    if (tMap && tRefLine?.getLatLngs().length > 1)
+      tMap.fitBounds(tRefLine.getBounds(), {padding:[30,30]});
+  }, 400);
 }
 
 // ══════════════════════════════════════════════
