@@ -238,6 +238,38 @@ body.offline #offlineBadge { display:block; }
 
 .leaflet-tile { filter:brightness(0.75) saturate(0.8); }
 .leaflet-container { background:#0a0c10; }
+
+/* ── SCREEN LOCK OVERLAY ── */
+#screenLock {
+  display:none; position:fixed; inset:0; z-index:99999;
+  background:#000;
+  flex-direction:column; align-items:center; justify-content:center;
+  gap:16px; cursor:none;
+  touch-action:none;
+}
+#screenLock.active { display:flex; }
+#screenLockHint {
+  color:rgba(255,255,255,0.15); font-size:13px; letter-spacing:0.08em;
+  text-transform:uppercase; text-align:center; line-height:1.6;
+  transition: color 0.3s;
+}
+#screenLockHint.flash { color:rgba(255,255,255,0.6); }
+#screenLockStats {
+  color:rgba(255,255,255,0.08); font-family:var(--mono);
+  font-size:11px; text-align:center; line-height:2;
+}
+.lock-timer {
+  font-family:var(--mono); font-size:clamp(36px,10vw,56px);
+  font-weight:300; color:rgba(255,255,255,0.06);
+  letter-spacing:-0.02em;
+}
+/* Lock button in ctrl bar */
+#btnLock {
+  flex:0 0 auto; padding:14px 13px; background:var(--card);
+  color:var(--muted); border:1px solid var(--border);
+  border-radius:var(--r); font-size:18px; cursor:pointer;
+}
+#btnLock:active { opacity:0.6; }
 </style>
 </head>
 <body>
@@ -381,6 +413,7 @@ body.offline #offlineBadge { display:block; }
       <button class="btn btn-stop"  id="btnStop"  onclick="stopRun()"  disabled>Stop</button>
       <button class="btn btn-save"  id="btnSave"  onclick="saveRun()"  disabled>Speichern</button>
       <button class="btn btn-icon"  onclick="resetRun()">↺</button>
+      <button id="btnLock" onclick="activateScreenLock()" title="Bildschirm sperren">🔒</button>
     </div>
   </div>
 
@@ -468,6 +501,14 @@ body.offline #offlineBadge { display:block; }
 </div>
 
 <div id="toast"></div>
+
+<!-- SCREEN LOCK OVERLAY -->
+<div id="screenLock">
+  <div class="lock-timer" id="lockTimer">00:00:00</div>
+  <div id="screenLockStats"></div>
+  <div id="screenLockHint">✌️ Zwei Finger zum Entsperren</div>
+</div>
+
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -1195,6 +1236,65 @@ function renderDetailView(run){
 // ══════════════════════════════════════════════
 function loadRuns(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]');}catch{return[];}}
 function saveRuns(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(runs));}catch(e){toast('Speicherfehler: '+e.message);}}
+
+
+// ══════════════════════════════════════════════
+//  SCREEN LOCK
+// ══════════════════════════════════════════════
+let screenLocked = false;
+let lockTimerInt = null;
+
+function activateScreenLock() {
+  if (!running) { toast('Bitte erst Lauf starten'); return; }
+  screenLocked = true;
+  const overlay = document.getElementById('screenLock');
+  overlay.classList.add('active');
+
+  // Keep wakeLock alive
+  if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
+
+  // Update lock screen timer + stats every second
+  lockTimerInt = setInterval(updateLockScreen, 1000);
+  updateLockScreen();
+
+  // Two-finger touch to unlock
+  overlay.addEventListener('touchstart', onLockTouch, {passive:false});
+}
+
+function updateLockScreen() {
+  const sec = running ? (Date.now() - startTime + elapsed) / 1000 : elapsed / 1000;
+  document.getElementById('lockTimer').textContent = fmtTime(sec);
+
+  if (currentRun) {
+    const dist = currentRun.dist.toFixed(2);
+    const pts  = currentRun.points;
+    const avg  = pts.length > 1 ? rollingAvg(pts, 'speed', SPEED_AVG_SEC) : 0;
+    document.getElementById('screenLockStats').textContent =
+      `${dist} km    ${avg.toFixed(1)} km/h`;
+  }
+}
+
+function onLockTouch(e) {
+  if (e.touches.length >= 2) {
+    // Two fingers detected – flash hint then unlock
+    const hint = document.getElementById('screenLockHint');
+    hint.classList.add('flash');
+    setTimeout(() => {
+      deactivateScreenLock();
+    }, 200);
+    e.preventDefault();
+  }
+}
+
+function deactivateScreenLock() {
+  screenLocked = false;
+  const overlay = document.getElementById('screenLock');
+  overlay.classList.remove('active');
+  overlay.removeEventListener('touchstart', onLockTouch);
+  clearInterval(lockTimerInt);
+  // Re-request wakeLock
+  if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
+}
 
 window.addEventListener('load',()=>{ initTrackerMap(); });
 </script>
