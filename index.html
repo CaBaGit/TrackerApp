@@ -104,16 +104,17 @@ body.offline #offlineBadge { display:block; }
 .chart-legend-line { width:16px; height:2px; border-radius:1px; }
 #speedCanvas { width:100%; flex:1; min-height:0; display:block; }
 
-/* ── Panel 1: Groß mit Karte (2x3) ── */
-#panelBig { position:relative; }
-#map2 { height:160px; position:relative; z-index:1; flex-shrink:0; }
+/* ── Panel 1: Karte (50%) + große Stats (50%) ── */
+#panelBig { position:relative; height:100%; }
+#map2Wrap { height:50%; position:relative; flex-shrink:0; }
+#map2 { height:100%; position:relative; z-index:1; }
 .map2-controls { position:absolute; top:8px; right:8px; z-index:500; display:flex; flex-direction:column; gap:5px; }
-.big-bottom { background:var(--bg); padding:10px 14px 0; flex:1; display:flex; flex-direction:column; }
-.big-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; flex:1; }
-.big-box { background:var(--card); border-radius:12px; border:1px solid var(--border); padding:0; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.big-box-label { font-size:9px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
-.big-box-val   { font-family:var(--mono); font-size:clamp(24px,7.5vw,36px); font-weight:700; color:var(--text); line-height:1; }
-.big-box-unit  { font-size:9px; color:var(--muted); margin-top:3px; }
+.big-bottom { background:var(--bg); padding:8px 10px; height:50%; display:flex; flex-direction:column; min-height:0; }
+.big-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr 1fr; gap:6px; flex:1; min-height:0; }
+.big-box { background:var(--card); border-radius:12px; border:1px solid var(--border); padding:2px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; }
+.big-box-label { font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:2px; }
+.big-box-val   { font-family:var(--mono); font-size:clamp(22px,8vw,40px); font-weight:700; color:var(--text); line-height:1; }
+.big-box-unit  { font-size:9px; color:var(--muted); margin-top:2px; }
 .big-box.accent .big-box-val { color:var(--accent); }
 .big-box.blue   .big-box-val { color:var(--blue); }
 .big-box.purple .big-box-val { color:var(--purple); }
@@ -243,15 +244,23 @@ body.offline #offlineBadge { display:block; }
   touch-action:none;
 }
 #screenLock.active { display:flex; }
+#lockGestureSvg {
+  position:absolute; inset:0; width:100%; height:100%;
+  pointer-events:none; z-index:1;
+}
 #screenLockHint {
   color:rgba(255,255,255,0.15); font-size:13px; letter-spacing:0.08em;
   text-transform:uppercase; text-align:center; line-height:1.6;
   transition: color 0.3s;
 }
 #screenLockHint.flash { color:rgba(255,255,255,0.6); }
-#screenLockStats {
-  color:rgba(255,255,255,0.08); font-family:var(--mono);
-  font-size:11px; text-align:center; line-height:2;
+#screenLockNumbers {
+  display:flex; gap:24px; align-items:center; justify-content:center;
+}
+.lock-num {
+  font-family:var(--mono); font-weight:700; color:#fff;
+  font-size:clamp(32px,15vw,80px); line-height:0.92;
+  text-align:center;
 }
 .lock-timer {
   font-family:var(--mono); font-size:clamp(36px,10vw,56px);
@@ -316,24 +325,23 @@ body.offline #offlineBadge { display:block; }
         </div>
       </div>
 
-      <!-- PANEL 1: Karte klein + große Stats -->
+      <!-- PANEL 1: Karte (50% Höhe) + große Stats -->
       <div class="view-panel" id="panelBig">
-        <div style="position:relative;flex-shrink:0;height:160px;">
-          <div id="map2" style="height:100%;"></div>
+        <div id="map2Wrap">
+          <div id="map2"></div>
           <div class="map2-controls map-controls">
             <button class="map-ctrl-btn active-btn" id="btnFollow2"   onclick="toggleFollow()">◎</button>
             <button class="map-ctrl-btn"            id="btnFitAll2"   onclick="fitRoute()">⤢</button>
           </div>
         </div>
         <div class="big-bottom">
-          <div class="timer-big" style="font-size:clamp(30px,9vw,46px);margin-bottom:7px;" id="timer2">00:00:00</div>
           <div class="big-grid">
             <div class="big-box accent"><div class="big-box-label">Distanz</div><div class="big-box-val" id="bigDist">0.00</div><div class="big-box-unit">km</div></div>
             <div class="big-box"><div class="big-box-label">Pace ⌀20s</div><div class="big-box-val" id="bigPace">–:––</div><div class="big-box-unit">min/km</div></div>
             <div class="big-box blue"><div class="big-box-label">Speed ⌀20s</div><div class="big-box-val" id="bigSpeed">0.0</div><div class="big-box-unit">km/h</div></div>
             <div class="big-box"><div class="big-box-label">Ø Speed</div><div class="big-box-val" id="bigAvgSpeed">0.0</div><div class="big-box-unit">km/h</div></div>
             <div class="big-box accent"><div class="big-box-label">Höhenmeter</div><div class="big-box-val" id="bigAlt">0</div><div class="big-box-unit">m ↑</div></div>
-            <div class="big-box purple"><div class="big-box-label">HM/h ⌀2min</div><div class="big-box-val" id="bigAltRate">0</div><div class="big-box-unit">m/h</div></div>
+            <div class="big-box purple"><div class="big-box-label">HM/h ⌀1min</div><div class="big-box-val" id="bigAltRate">0</div><div class="big-box-unit">m/h</div></div>
           </div>
         </div>
       </div>
@@ -476,9 +484,13 @@ body.offline #offlineBadge { display:block; }
 
 <!-- SCREEN LOCK OVERLAY -->
 <div id="screenLock">
+  <svg id="lockGestureSvg"></svg>
   <div class="lock-timer" id="lockTimer">00:00:00</div>
-  <div id="screenLockStats"></div>
-  <div id="screenLockHint">✌️ Zwei Finger zum Entsperren</div>
+  <div id="screenLockNumbers">
+    <div class="lock-num" id="lockSpeed">0.0</div>
+    <div class="lock-num" id="lockAltRate">0</div>
+  </div>
+  <div id="screenLockHint">Zeichne ein „L" zum Entsperren<br><span style="font-size:10px;opacity:0.6">runter, dann nach rechts</span></div>
 </div>
 
 
@@ -1333,55 +1345,140 @@ function saveRuns(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(runs));}
 let screenLocked = false;
 let lockTimerInt = null;
 
+// L-Geste: zuerst deutlich runter, dann deutlich nach rechts.
+// Mindestlängen relativ zur Bildschirmgröße, damit es auf jedem Gerät funktioniert.
+let lockGesturePoints = [];
+let lockGestureActive = false;
+
 function activateScreenLock() {
   if (!running) { toast('Bitte erst Lauf starten'); return; }
   screenLocked = true;
   const overlay = document.getElementById('screenLock');
   overlay.classList.add('active');
 
-  // Keep wakeLock alive
   if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
 
-  // Update lock screen timer + stats every second
   lockTimerInt = setInterval(updateLockScreen, 1000);
   updateLockScreen();
 
-  // Two-finger touch to unlock
-  overlay.addEventListener('touchstart', onLockTouch, {passive:false});
+  lockGesturePoints = [];
+  lockGestureActive = false;
+  overlay.addEventListener('touchstart', onLockTouchStart, {passive:false});
+  overlay.addEventListener('touchmove',  onLockTouchMove,  {passive:false});
+  overlay.addEventListener('touchend',   onLockTouchEnd,   {passive:false});
 }
 
 function updateLockScreen() {
   const sec = running ? (Date.now() - startTime + elapsed) / 1000 : elapsed / 1000;
   document.getElementById('lockTimer').textContent = fmtTime(sec);
 
-  if (currentRun) {
-    const dist = currentRun.dist.toFixed(2);
-    const pts  = currentRun.points;
-    const avg  = pts.length > 1 ? rollingAvg(pts, 'speed', SPEED_AVG_SEC) : 0;
-    document.getElementById('screenLockStats').textContent =
-      `${dist} km    ${avg.toFixed(1)} km/h`;
+  if (currentRun && currentRun.points.length > 1) {
+    const avgSpeed = rollingAvg(currentRun.points, 'speed', SPEED_AVG_SEC);
+    const avgAltRate = altRateFromWindow(currentRun.points, ALT_AVG_SEC);
+    document.getElementById('lockSpeed').textContent = avgSpeed.toFixed(1);
+    document.getElementById('lockAltRate').textContent = Math.round(avgAltRate/10)*10;
   }
 }
 
-function onLockTouch(e) {
-  if (e.touches.length >= 2) {
-    // Two fingers detected – flash hint then unlock
+function onLockTouchStart(e) {
+  if (e.touches.length !== 1) { lockGesturePoints = []; lockGestureActive = false; return; }
+  lockGestureActive = true;
+  lockGesturePoints = [{x:e.touches[0].clientX, y:e.touches[0].clientY}];
+  e.preventDefault();
+}
+
+function onLockTouchMove(e) {
+  if (!lockGestureActive || e.touches.length !== 1) return;
+  lockGesturePoints.push({x:e.touches[0].clientX, y:e.touches[0].clientY});
+  drawLockGesturePath();
+  e.preventDefault();
+}
+
+function onLockTouchEnd(e) {
+  if (!lockGestureActive) return;
+  lockGestureActive = false;
+  if (checkLGesture(lockGesturePoints)) {
     const hint = document.getElementById('screenLockHint');
     hint.classList.add('flash');
-    setTimeout(() => {
-      deactivateScreenLock();
-    }, 200);
-    e.preventDefault();
+    setTimeout(() => deactivateScreenLock(), 150);
+  } else {
+    lockGesturePoints = [];
+    clearLockGesturePath();
   }
+  e.preventDefault();
+}
+
+// Prüft ob der gezeichnete Pfad ein "L" ist:
+// Phase 1 (erste Hälfte der Punkte): überwiegend vertikal nach unten
+// Phase 2 (zweite Hälfte): überwiegend horizontal nach rechts
+// Mindestlänge je Phase: 25% der jeweiligen Bildschirmdimension
+function checkLGesture(points) {
+  if (points.length < 6) return false;
+
+  const start = points[0];
+  const end   = points[points.length-1];
+
+  // Finde den "Eckpunkt" – den Punkt mit dem größten Y-Wert nahe der Mitte des Pfads,
+  // an dem die Bewegung von vertikal zu horizontal wechselt
+  let cornerIdx = 0, maxY = -Infinity;
+  for (let i = 0; i < points.length; i++) {
+    if (points[i].y > maxY) { maxY = points[i].y; cornerIdx = i; }
+  }
+  const corner = points[cornerIdx];
+
+  const vertDist  = corner.y - start.y;   // sollte deutlich positiv sein (runter)
+  const horizDist = end.x - corner.x;     // sollte deutlich positiv sein (rechts)
+
+  const minVert  = window.innerHeight * 0.2;
+  const minHoriz = window.innerWidth  * 0.2;
+
+  // Vertikale Phase darf nicht zu schräg sein (nicht mehr seitwärts als runter)
+  const vertSideDrift = Math.abs(corner.x - start.x);
+  // Horizontale Phase darf nicht zu schräg sein (nicht mehr hoch/runter als seitwärts)
+  const horizVertDrift = Math.abs(end.y - corner.y);
+
+  const cornerIsLateEnough = cornerIdx > points.length * 0.15 && cornerIdx < points.length * 0.85;
+
+  return vertDist > minVert
+      && horizDist > minHoriz
+      && vertSideDrift < vertDist * 0.7
+      && horizVertDrift < horizDist * 0.7
+      && cornerIsLateEnough;
+}
+
+function drawLockGesturePath() {
+  const svg = document.getElementById('lockGestureSvg');
+  if (!svg || lockGesturePoints.length < 2) return;
+  const d = lockGesturePoints.map((p,i)=>`${i===0?'M':'L'}${p.x},${p.y}`).join(' ');
+  let path = svg.querySelector('path');
+  if (!path) {
+    path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('stroke', 'rgba(0,229,160,0.5)');
+    path.setAttribute('stroke-width', '4');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+  }
+  path.setAttribute('d', d);
+}
+
+function clearLockGesturePath() {
+  const svg = document.getElementById('lockGestureSvg');
+  if (svg) svg.innerHTML = '';
 }
 
 function deactivateScreenLock() {
   screenLocked = false;
   const overlay = document.getElementById('screenLock');
   overlay.classList.remove('active');
-  overlay.removeEventListener('touchstart', onLockTouch);
+  overlay.removeEventListener('touchstart', onLockTouchStart);
+  overlay.removeEventListener('touchmove',  onLockTouchMove);
+  overlay.removeEventListener('touchend',   onLockTouchEnd);
+  clearLockGesturePath();
+  document.getElementById('screenLockHint').classList.remove('flash');
+  lockGesturePoints = [];
   clearInterval(lockTimerInt);
-  // Re-request wakeLock
   if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
 }
 
