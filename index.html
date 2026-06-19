@@ -85,8 +85,8 @@ body.offline #offlineBadge { display:block; }
 .map-ctrl-btn { width:36px; height:36px; border-radius:8px; background:var(--surface); border:1px solid var(--border); color:var(--text); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.4); }
 .map-ctrl-btn.active-btn { background:var(--accent); color:#001a0d; border-color:var(--accent); }
 
-.tracker-bottom { background:var(--bg); padding:10px 14px 0; flex-shrink:0; }
-.status-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.tracker-bottom { background:var(--bg); padding:10px 14px 0; flex:1; display:flex; flex-direction:column; min-height:0; }
+.status-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-shrink:0; }
 .gps-dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex-shrink:0; transition:background 0.3s; }
 .gps-dot.ok  { background:var(--accent); box-shadow:0 0 6px var(--accent); animation:blink 1.5s infinite; }
 .gps-dot.bad { background:var(--warn); box-shadow:0 0 6px var(--warn); }
@@ -94,20 +94,15 @@ body.offline #offlineBadge { display:block; }
 .gps-label { font-size:11px; color:var(--muted); flex:1; }
 .gps-acc   { font-family:var(--mono); font-size:11px; color:var(--accent); }
 
-.timer-big { text-align:center; font-family:var(--mono); font-size:clamp(34px,10vw,52px); font-weight:300; letter-spacing:-0.02em; background:linear-gradient(120deg,var(--text) 30%,var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:8px; }
-
-.stat-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:7px; }
-.stat-box { background:var(--card); border-radius:10px; border:1px solid var(--border); padding:8px 6px; text-align:center; }
-.stat-box-label { font-size:9px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:3px; }
-.stat-box-val   { font-family:var(--mono); font-size:16px; font-weight:700; color:var(--text); line-height:1; }
-.stat-box-unit  { font-size:9px; color:var(--muted); margin-top:2px; }
+.timer-big { text-align:center; font-family:var(--mono); font-size:clamp(34px,10vw,52px); font-weight:300; letter-spacing:-0.02em; background:linear-gradient(120deg,var(--text) 30%,var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:10px; flex-shrink:0; }
 
 .speed-chart-wrap { background:var(--card); border-radius:var(--r); border:1px solid var(--border); padding:8px 12px; margin-bottom:8px; }
-.speed-chart-header { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:5px; }
+.speed-chart-wrap-large { flex:1; display:flex; flex-direction:column; min-height:0; margin-bottom:10px; }
+.speed-chart-header { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:5px; flex-shrink:0; }
 .chart-legend { display:flex; gap:10px; }
 .chart-legend-item { display:flex; align-items:center; gap:4px; font-size:9px; color:var(--muted); }
 .chart-legend-line { width:16px; height:2px; border-radius:1px; }
-#speedCanvas { width:100%; height:46px; display:block; }
+#speedCanvas { width:100%; flex:1; min-height:0; display:block; }
 
 /* ── Panel 1: Groß mit Karte (2x3) ── */
 #panelBig { position:relative; }
@@ -142,11 +137,11 @@ body.offline #offlineBadge { display:block; }
 .full-box {
   background:var(--card); border-radius:14px; border:1px solid var(--border);
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  padding:6px;
+  padding:4px;
 }
-.full-box-label { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:5px; }
-.full-box-val   { font-family:var(--mono); font-size:clamp(28px,9vw,52px); font-weight:700; line-height:1; }
-.full-box-unit  { font-size:11px; color:var(--muted); margin-top:4px; }
+.full-box-combo { display:flex; align-items:baseline; gap:5px; justify-content:center; flex-wrap:wrap; }
+.full-box-val   { font-family:var(--mono); font-size:clamp(30px,10vw,58px); font-weight:700; line-height:1; }
+.full-box-unit-inline { font-family:var(--mono); font-size:clamp(13px,4vw,22px); color:var(--muted); font-weight:600; }
 .full-box.c-accent .full-box-val { color:var(--accent); }
 .full-box.c-blue   .full-box-val { color:var(--blue); }
 .full-box.c-purple .full-box-val { color:var(--purple); }
@@ -265,9 +260,9 @@ body.offline #offlineBadge { display:block; }
 }
 /* Lock button in ctrl bar */
 #btnLock {
-  flex:0 0 auto; padding:14px 13px; background:var(--card);
-  color:var(--muted); border:1px solid var(--border);
-  border-radius:var(--r); font-size:18px; cursor:pointer;
+  flex:0 0 auto; padding:14px 20px; background:var(--card);
+  color:var(--text); border:1px solid var(--border);
+  border-radius:var(--r); font-size:24px; cursor:pointer;
 }
 #btnLock:active { opacity:0.6; }
 </style>
@@ -308,17 +303,7 @@ body.offline #offlineBadge { display:block; }
             <div class="gps-acc"   id="gpsAcc"></div>
           </div>
           <div class="timer-big" id="timer">00:00:00</div>
-          <div class="stat-row">
-            <div class="stat-box"><div class="stat-box-label">Distanz</div><div class="stat-box-val" id="statDist">0.00</div><div class="stat-box-unit">km</div></div>
-            <div class="stat-box"><div class="stat-box-label">Pace ⌀20s</div><div class="stat-box-val" id="statPace">–:––</div><div class="stat-box-unit">min/km</div></div>
-            <div class="stat-box"><div class="stat-box-label">Speed ⌀20s</div><div class="stat-box-val" id="statSpeed">0.0</div><div class="stat-box-unit">km/h</div></div>
-          </div>
-          <div class="stat-row">
-            <div class="stat-box"><div class="stat-box-label">Ø Speed</div><div class="stat-box-val" id="statAvgSpeed">0.0</div><div class="stat-box-unit">km/h</div></div>
-            <div class="stat-box"><div class="stat-box-label">Höhenmeter</div><div class="stat-box-val" id="statAlt">0</div><div class="stat-box-unit">m ↑</div></div>
-            <div class="stat-box"><div class="stat-box-label">HM/h ⌀2min</div><div class="stat-box-val" id="statAltRate">0</div><div class="stat-box-unit">m/h</div></div>
-          </div>
-          <div class="speed-chart-wrap">
+          <div class="speed-chart-wrap speed-chart-wrap-large">
             <div class="speed-chart-header">
               <span>Verlauf</span>
               <div class="chart-legend">
@@ -363,34 +348,22 @@ body.offline #offlineBadge { display:block; }
         </div>
         <div class="full-grid">
           <div class="full-box c-accent">
-            <div class="full-box-label">Distanz</div>
-            <div class="full-box-val" id="fullDist">0.00</div>
-            <div class="full-box-unit">km</div>
+            <div class="full-box-combo"><span class="full-box-val" id="fullDist">0.00</span><span class="full-box-unit-inline">km</span></div>
           </div>
           <div class="full-box c-white">
-            <div class="full-box-label">Pace ⌀20s</div>
-            <div class="full-box-val" id="fullPace">–:––</div>
-            <div class="full-box-unit">min/km</div>
+            <div class="full-box-combo"><span class="full-box-val" id="fullPace">–:––</span><span class="full-box-unit-inline">min/km</span></div>
           </div>
           <div class="full-box c-blue">
-            <div class="full-box-label">Speed ⌀20s</div>
-            <div class="full-box-val" id="fullSpeed">0.0</div>
-            <div class="full-box-unit">km/h</div>
+            <div class="full-box-combo"><span class="full-box-val" id="fullSpeed">0.0</span><span class="full-box-unit-inline">km/h</span></div>
           </div>
           <div class="full-box c-white">
-            <div class="full-box-label">Ø Speed</div>
-            <div class="full-box-val" id="fullAvgSpeed">0.0</div>
-            <div class="full-box-unit">km/h</div>
+            <div class="full-box-combo"><span class="full-box-val" id="fullAvgSpeed">0.0</span><span class="full-box-unit-inline">⌀km/h</span></div>
           </div>
           <div class="full-box c-accent">
-            <div class="full-box-label">Höhenmeter</div>
-            <div class="full-box-val" id="fullAlt">0</div>
-            <div class="full-box-unit">m ↑</div>
+            <div class="full-box-combo"><span class="full-box-val" id="fullAlt">0</span><span class="full-box-unit-inline">m↑</span></div>
           </div>
           <div class="full-box c-purple">
-            <div class="full-box-label">HM/h ⌀2min</div>
-            <div class="full-box-val" id="fullAltRate">0</div>
-            <div class="full-box-unit">m/h</div>
+            <div class="full-box-combo"><span class="full-box-val" id="fullAltRate">0</span><span class="full-box-unit-inline">m/h</span></div>
           </div>
         </div>
       </div>
@@ -409,8 +382,7 @@ body.offline #offlineBadge { display:block; }
   <!-- Controls Bar (immer sichtbar) -->
   <div id="ctrlBar">
     <div class="ctrl-row">
-      <button class="btn btn-start" id="btnStart" onclick="startRun()">Start</button>
-      <button class="btn btn-stop"  id="btnStop"  onclick="stopRun()"  disabled>Stop</button>
+      <button class="btn btn-start" id="btnToggle" onclick="toggleRun()">Start</button>
       <button class="btn btn-save"  id="btnSave"  onclick="saveRun()"  disabled>Speichern</button>
       <button class="btn btn-icon"  onclick="resetRun()">↺</button>
       <button id="btnLock" onclick="activateScreenLock()" title="Bildschirm sperren">🔒</button>
@@ -618,7 +590,7 @@ swipeEl.addEventListener('touchend', () => {
 // ══════════════════════════════════════════════
 const STORAGE_KEY   = 'lauftracker_runs_v3';
 const SPEED_AVG_SEC = 20;
-const ALT_AVG_SEC   = 120;
+const ALT_AVG_SEC   = 60;   // 1 Minute Glättungsfenster für Höhe
 const ALT_MIN_DELTA = 2;
 
 let runs = loadRuns();
@@ -657,6 +629,41 @@ function rollingAvg(points, field, windowSec) {
   const cutoff = points[points.length-1].ts - windowSec*1000;
   const w = points.filter(p=>p.ts>=cutoff);
   return w.length ? w.reduce((s,p)=>s+(p[field]||0),0)/w.length : 0;
+}
+
+// HM/h aus geglätteter Höhe: gleitender Höhenschnitt JETZT minus gleitender
+// Höhenschnitt vor windowSec, geteilt durch windowSec. Robuster gegen GPS-
+// Rauschen als eine Mittelung einzelner Punkt-zu-Punkt-Raten, weil alle
+// Punkte im Fenster gleichberechtigt einfließen statt nur die Fenstergrenzen.
+function altRateFromWindow(points, windowSec) {
+  const withAlt = points.filter(p => p.alt != null);
+  if (withAlt.length < 2) return 0;
+  const now = withAlt[withAlt.length-1].ts;
+
+  // "Jetzt"-Schnitt: alle Punkte mit Höhe der letzten windowSec
+  const cutoffNow = now - windowSec*1000;
+  const winNow = withAlt.filter(p => p.ts >= cutoffNow);
+  if (!winNow.length) return 0;
+  const altNow = winNow.reduce((s,p)=>s+p.alt,0) / winNow.length;
+
+  // "Vorher"-Schnitt: Punkte zwischen windowSec und 2×windowSec zurück
+  const cutoffBeforeStart = now - 2*windowSec*1000;
+  const cutoffBeforeEnd   = cutoffNow;
+  const winBefore = withAlt.filter(p => p.ts >= cutoffBeforeStart && p.ts < cutoffBeforeEnd);
+
+  // Falls noch nicht genug Historie da ist (Lauf gerade gestartet),
+  // nimm den ältesten verfügbaren Punkt als Referenz
+  let altBefore, dtSec;
+  if (winBefore.length) {
+    altBefore = winBefore.reduce((s,p)=>s+p.alt,0) / winBefore.length;
+    dtSec = windowSec;
+  } else {
+    altBefore = withAlt[0].alt;
+    dtSec = (now - withAlt[0].ts) / 1000;
+    if (dtSec < 5) return 0; // zu wenig Zeit vergangen für sinnvolle Rate
+  }
+
+  return ((altNow - altBefore) / dtSec) * 3600; // m/h
 }
 
 // ══════════════════════════════════════════════
@@ -900,12 +907,17 @@ function startPlannedRoute() {
 function initCurrentRun() {
   currentRun={ id:Date.now(), startTs:Date.now(), points:[], dist:0, elevGain:0, splits:[], lastSplitKm:0, lastPos:null, lastAlt:null };
 }
+
+// ── Start/Stop als ein Umschalt-Button ──
+function toggleRun() {
+  if (running) stopRun(); else startRun();
+}
+
 function startRun() {
   if (!navigator.geolocation) { toast('GPS nicht verfügbar'); return; }
   if (!currentRun) initCurrentRun();
   running=true; startTime=Date.now(); elapsed=elapsed||0;
-  document.getElementById('btnStart').disabled=true;
-  document.getElementById('btnStop').disabled=false;
+  updateToggleBtn();
   document.getElementById('btnSave').disabled=true;
   timerInt=setInterval(updateTimerUI,1000);
   watchId=navigator.geolocation.watchPosition(onGPS,onGPSErr,{enableHighAccuracy:true,maximumAge:2000,timeout:15000});
@@ -916,12 +928,21 @@ function stopRun() {
   running=false; elapsed+=Date.now()-startTime;
   clearInterval(timerInt);
   if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null;}
-  document.getElementById('btnStart').textContent='Weiter';
-  document.getElementById('btnStart').disabled=false;
-  document.getElementById('btnStop').disabled=true;
+  updateToggleBtn();
   if(currentRun&&currentRun.points.length>2) document.getElementById('btnSave').disabled=false;
   ['gpsDot','gpsDotFull'].forEach(id=>{const el=document.getElementById(id);if(el)el.className='gps-dot';});
   ['gpsLabel','gpsLabelFull'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='Pausiert';});
+}
+function updateToggleBtn() {
+  const btn = document.getElementById('btnToggle');
+  if (!btn) return;
+  if (running) {
+    btn.textContent = 'Stop';
+    btn.className = 'btn btn-stop';
+  } else {
+    btn.textContent = currentRun ? 'Weiter' : 'Start';
+    btn.className = 'btn btn-start';
+  }
 }
 function resetRun() {
   stopRun(); currentRun=null; elapsed=0; running=false;
@@ -932,9 +953,8 @@ function resetRun() {
   Object.entries(zeros).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.textContent=v;});
   document.getElementById('speedChartLabel').textContent='– km/h';
   document.getElementById('altChartLabel').textContent='– m/h';
-  document.getElementById('btnStart').textContent='Start';
-  document.getElementById('btnStart').disabled=false;
   document.getElementById('btnSave').disabled=true;
+  updateToggleBtn();
   ['gpsLabel','gpsLabelFull'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='GPS wird gesucht…';});
   ['gpsAcc','gpsAccFull'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='';});
   ['gpsDot','gpsDotFull'].forEach(id=>{const el=document.getElementById(id);if(el)el.className='gps-dot';});
@@ -946,6 +966,57 @@ function resetRun() {
   if(tStartDot2&&tMap2) {try{tMap2.removeLayer(tStartDot2);}catch{}}
   speedCtx.clearRect(0,0,speedCanvas.width,speedCanvas.height);
 }
+
+// ══════════════════════════════════════════════
+//  HINTERGRUND-RECOVERY
+//  Chrome friert GPS/Timer ein wenn der Tab in den Hintergrund geht,
+//  auch wenn "Hintergrundaktivität" in Android erlaubt ist. Beim
+//  Zurückkommen stellen wir automatisch alles wieder her, ohne dass
+//  manuell Start/Stop gedrückt werden muss. Die GPS-Lücke selbst lässt
+//  sich nicht schließen (echte Hintergrund-Erfassung ist in PWAs nicht
+//  zuverlässig möglich), aber wir machen sie transparent.
+// ══════════════════════════════════════════════
+let lastVisibleTs = Date.now();
+let wasRunningBeforeHidden = false;
+let wasLockedBeforeHidden = false;
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    // Tab geht in den Hintergrund
+    wasRunningBeforeHidden = running;
+    wasLockedBeforeHidden = screenLocked;
+    lastVisibleTs = Date.now();
+  } else {
+    // Tab wird wieder sichtbar
+    const awayMs = Date.now() - lastVisibleTs;
+    const awaySec = Math.round(awayMs / 1000);
+
+    if (wasRunningBeforeHidden) {
+      // wakeLock geht beim Hintergrund-Wechsel immer verloren → neu anfordern
+      if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
+
+      // GPS watch neu starten falls Chrome ihn gekillt hat
+      if (watchId == null && running) {
+        watchId = navigator.geolocation.watchPosition(onGPS, onGPSErr, {enableHighAccuracy:true, maximumAge:2000, timeout:15000});
+      }
+
+      // Timer-Interval neu starten falls verloren
+      if (!timerInt && running) {
+        timerInt = setInterval(updateTimerUI, 1000);
+      }
+
+      // Lock-Overlay wiederherstellen falls es aktiv war
+      if (wasLockedBeforeHidden && !screenLocked) {
+        activateScreenLock();
+      }
+
+      // Bei spürbarer Lücke (>5 Sek) transparent informieren
+      if (awaySec > 5) {
+        toast(`⏱ GPS-Lücke: ${awaySec}s (App war im Hintergrund)`);
+      }
+    }
+  }
+});
 
 function onGPS(pos) {
   const {latitude:lat,longitude:lng,accuracy,speed,altitude}=pos.coords;
@@ -1005,11 +1076,11 @@ function onGPS(pos) {
 
   // Mittelwerte
   const avgSpeed20  = rollingAvg(currentRun.points,'speed',SPEED_AVG_SEC);
-  const avgAltRate  = rollingAvg(currentRun.points,'altRate',ALT_AVG_SEC);
+  const avgAltRate  = altRateFromWindow(currentRun.points, ALT_AVG_SEC);
   const elapsedSec  = (Date.now()-startTime+(elapsed||0))/1000;
   const totalAvgSpd = currentRun.dist>0.05&&elapsedSec>0?(currentRun.dist/elapsedSec)*3600:0;
   const pace20      = avgSpeed20>0.1?3600/avgSpeed20:0;
-  const hmh         = Math.round(Math.max(0,avgAltRate));
+  const hmh         = Math.round(avgAltRate/10)*10; // auf 10m runden, negative Werte erlaubt
 
   // Alle Felder updaten
   const v={
@@ -1091,9 +1162,27 @@ function drawLiveChart(points) {
   speedCtx.scale(devicePixelRatio,devicePixelRatio);
   speedCtx.clearRect(0,0,W,H);
   if(points.length<2) return;
-  const speeds=points.map(p=>p.speed||0), altRates=points.map(p=>Math.max(0,p.altRate||0));
-  const maxS=Math.max(...speeds,1), maxA=Math.max(...altRates,1);
-  const yS=v=>H-(v/maxS)*(H-4)-2, yA=v=>H-(v/maxA)*(H-4)-2;
+
+  const speeds=points.map(p=>p.speed||0);
+
+  // HM/h-Kurve: für jeden Punkt die fenster-geglättete Rate berechnen
+  // (nicht die rohe Punkt-zu-Punkt-Rate) → konsistent mit der Anzeige, glatt.
+  // Aus Performance-Gründen nur an einer reduzierten Anzahl Stützstellen berechnen.
+  const MAX_CHART_POINTS = 60;
+  const step = Math.max(1, Math.floor(points.length / MAX_CHART_POINTS));
+  const sampledIdx = [];
+  for (let i=0; i<points.length; i+=step) sampledIdx.push(i);
+  if (sampledIdx[sampledIdx.length-1] !== points.length-1) sampledIdx.push(points.length-1);
+
+  const altRatesSampled = sampledIdx.map(i => altRateFromWindow(points.slice(0,i+1), ALT_AVG_SEC));
+  const allAltVals = altRatesSampled;
+  const maxA = Math.max(...allAltVals.map(v=>Math.abs(v)), 10);
+
+  const maxS=Math.max(...speeds,1);
+  const yS=v=>H-(v/maxS)*(H-4)-2;
+  // HM/h kann negativ sein → Skala symmetrisch um Mitte
+  const yA=v=>H/2 - (v/maxA)*(H/2-4);
+
   // Speed fill
   const grad=speedCtx.createLinearGradient(0,0,0,H);
   grad.addColorStop(0,'rgba(0,229,160,0.25)'); grad.addColorStop(1,'rgba(0,229,160,0)');
@@ -1102,10 +1191,10 @@ function drawLiveChart(points) {
   // Speed line
   speedCtx.beginPath();speedCtx.setLineDash([]);speedCtx.strokeStyle='#00e5a0';speedCtx.lineWidth=2;speedCtx.lineJoin='round';
   speeds.forEach((s,i)=>{const x=(i/(speeds.length-1))*W;i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});speedCtx.stroke();
-  // HM/h line
-  if(altRates.some(v=>v>0)){
-    speedCtx.beginPath();speedCtx.setLineDash([3,3]);speedCtx.strokeStyle='#a855f7';speedCtx.lineWidth=1.5;
-    altRates.forEach((v,i)=>{const x=(i/(altRates.length-1))*W;i===0?speedCtx.moveTo(x,yA(v)):speedCtx.lineTo(x,yA(v));});
+  // HM/h line (geglättet, kann negativ sein)
+  if(altRatesSampled.some(v=>Math.abs(v)>5)){
+    speedCtx.beginPath();speedCtx.setLineDash([3,3]);speedCtx.strokeStyle='#a855f7';speedCtx.lineWidth=1.5;speedCtx.lineJoin='round';
+    sampledIdx.forEach((idx,i)=>{const x=(idx/(points.length-1))*W;const y=yA(altRatesSampled[i]);i===0?speedCtx.moveTo(x,y):speedCtx.lineTo(x,y);});
     speedCtx.stroke();speedCtx.setLineDash([]);
   }
 }
