@@ -124,24 +124,24 @@ body.offline #offlineBadge { display:block; }
   display:flex; flex-direction:column;
   padding:12px 14px 0;
 }
-.full-timer { text-align:center; font-family:var(--mono); font-size:clamp(42px,13vw,70px); font-weight:300; letter-spacing:-0.02em; background:linear-gradient(120deg,var(--text) 30%,var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:10px; flex-shrink:0; }
-.full-status { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:12px; flex-shrink:0; }
+.full-timer { text-align:center; font-family:var(--mono); font-size:clamp(24px,7vw,36px); font-weight:300; letter-spacing:-0.02em; background:linear-gradient(120deg,var(--text) 30%,var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:6px; flex-shrink:0; }
+.full-status { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:6px; flex-shrink:0; }
 .full-grid {
   flex:1; display:grid;
   grid-template-columns:1fr 1fr;
   grid-template-rows:1fr 1fr 1fr;
-  gap:8px;
+  gap:6px;
   min-height:0;
-  margin-bottom:8px;
+  margin-bottom:6px;
 }
 .full-box {
   background:var(--card); border-radius:14px; border:1px solid var(--border);
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  padding:4px;
+  padding:2px; overflow:hidden;
 }
-.full-box-combo { display:flex; align-items:baseline; gap:5px; justify-content:center; flex-wrap:wrap; }
-.full-box-val   { font-family:var(--mono); font-size:clamp(30px,10vw,58px); font-weight:700; line-height:1; }
-.full-box-unit-inline { font-family:var(--mono); font-size:clamp(13px,4vw,22px); color:var(--muted); font-weight:600; }
+.full-box-combo { display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:0.92; }
+.full-box-val   { font-family:var(--mono); font-size:clamp(32px,15vw,80px); font-weight:700; line-height:0.92; }
+.full-box-unit-inline { font-family:var(--mono); font-size:clamp(32px,15vw,80px); color:var(--muted); font-weight:700; line-height:0.92; }
 .full-box.c-accent .full-box-val { color:var(--accent); }
 .full-box.c-blue   .full-box-val { color:var(--blue); }
 .full-box.c-purple .full-box-val { color:var(--purple); }
