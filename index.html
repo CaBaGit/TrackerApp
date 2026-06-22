@@ -112,9 +112,9 @@ body.offline #offlineBadge { display:block; }
 .big-bottom { background:var(--bg); padding:8px 10px; height:50%; display:flex; flex-direction:column; min-height:0; }
 .big-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr 1fr; gap:6px; flex:1; min-height:0; }
 .big-box { background:var(--card); border-radius:12px; border:1px solid var(--border); padding:2px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; }
-.big-box-label { font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:2px; }
-.big-box-val   { font-family:var(--mono); font-size:clamp(22px,8vw,40px); font-weight:700; color:var(--text); line-height:1; }
-.big-box-unit  { font-size:9px; color:var(--muted); margin-top:2px; }
+.big-box-label { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:3px; }
+.big-box-val   { font-family:var(--mono); font-size:clamp(26px,9.5vw,48px); font-weight:700; color:var(--text); line-height:1; }
+.big-box-unit  { font-size:10px; color:var(--muted); margin-top:2px; }
 .big-box.accent .big-box-val { color:var(--accent); }
 .big-box.blue   .big-box-val { color:var(--blue); }
 .big-box.purple .big-box-val { color:var(--purple); }
@@ -142,7 +142,7 @@ body.offline #offlineBadge { display:block; }
 }
 .full-box-combo { display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:0.92; }
 .full-box-val   { font-family:var(--mono); font-size:clamp(32px,15vw,80px); font-weight:700; line-height:0.92; }
-.full-box-unit-inline { font-family:var(--mono); font-size:clamp(32px,15vw,80px); color:var(--muted); font-weight:700; line-height:0.92; }
+.full-box-unit-inline { font-family:var(--mono); font-size:clamp(12px,4vw,20px); color:var(--muted); font-weight:500; margin-top:3px; }
 .full-box.c-accent .full-box-val { color:var(--accent); }
 .full-box.c-blue   .full-box-val { color:var(--blue); }
 .full-box.c-purple .full-box-val { color:var(--purple); }
@@ -338,7 +338,7 @@ body.offline #offlineBadge { display:block; }
               <span>Verlauf</span>
               <div class="chart-legend">
                 <div class="chart-legend-item"><div class="chart-legend-line" style="background:var(--accent)"></div><span id="speedChartLabel">– km/h</span></div>
-                <div class="chart-legend-item"><div class="chart-legend-line" style="background:var(--purple)"></div><span id="altChartLabel">– m/h</span></div>
+                <div class="chart-legend-item"><div class="chart-legend-line" style="background:rgba(255,255,255,0.75);border-top:2px dashed rgba(255,255,255,0.75);height:0;margin-top:1px"></div><span id="altChartLabel">– m/h</span></div>
               </div>
             </div>
             <canvas id="speedCanvas"></canvas>
@@ -1257,17 +1257,16 @@ function updateRefMarker(distKm) {
 //  CHARTS
 // ══════════════════════════════════════════════
 function drawLiveChart(points) {
-  const W=speedCanvas.offsetWidth||300, H=speedCanvas.offsetHeight||46;
-  speedCanvas.width=W*devicePixelRatio; speedCanvas.height=H*devicePixelRatio;
+  const YAXIS_W = 34; // Breite der Y-Achse links
+  const W0=speedCanvas.offsetWidth||300, H=speedCanvas.offsetHeight||46;
+  speedCanvas.width=W0*devicePixelRatio; speedCanvas.height=H*devicePixelRatio;
   speedCtx.scale(devicePixelRatio,devicePixelRatio);
-  speedCtx.clearRect(0,0,W,H);
+  speedCtx.clearRect(0,0,W0,H);
   if(points.length<2) return;
 
+  const W = W0 - YAXIS_W; // Zeichenfläche rechts der Achse
   const speeds=points.map(p=>p.speed||0);
 
-  // HM/h-Kurve: für jeden Punkt die fenster-geglättete Rate berechnen
-  // (nicht die rohe Punkt-zu-Punkt-Rate) → konsistent mit der Anzeige, glatt.
-  // Aus Performance-Gründen nur an einer reduzierten Anzahl Stützstellen berechnen.
   const MAX_CHART_POINTS = 60;
   const step = Math.max(1, Math.floor(points.length / MAX_CHART_POINTS));
   const sampledIdx = [];
@@ -1275,26 +1274,69 @@ function drawLiveChart(points) {
   if (sampledIdx[sampledIdx.length-1] !== points.length-1) sampledIdx.push(points.length-1);
 
   const altRatesSampled = sampledIdx.map(i => altRateFromWindow(points.slice(0,i+1), ALT_AVG_SEC));
-  const allAltVals = altRatesSampled;
-  const maxA = Math.max(...allAltVals.map(v=>Math.abs(v)), 10);
+  const maxA = Math.max(...altRatesSampled.map(v=>Math.abs(v)), 10);
+  const maxS = Math.max(...speeds, 1);
+  const minS = 0;
 
-  const maxS=Math.max(...speeds,1);
-  const yS=v=>H-(v/maxS)*(H-4)-2;
-  // HM/h kann negativ sein → Skala symmetrisch um Mitte
-  const yA=v=>H/2 - (v/maxA)*(H/2-4);
+  // x: versetzt um YAXIS_W
+  const xOf = (i, total) => YAXIS_W + (i / (total - 1)) * W;
+  const yS = v => H - ((v-minS)/(maxS-minS)) * (H-6) - 2;
+  const yA = v => H/2 - (v/maxA) * (H/2-4);
 
-  // Speed fill
+  // ── Y-Achse Speed (links, grün) ──
+  speedCtx.font = `${Math.round(9*devicePixelRatio)/devicePixelRatio}px sans-serif`;
+  speedCtx.textAlign = 'right';
+  speedCtx.textBaseline = 'middle';
+  // Max-Wert oben
+  speedCtx.fillStyle = 'rgba(0,229,160,0.7)';
+  speedCtx.fillText(Math.round(maxS) + '', YAXIS_W - 3, yS(maxS) + 1);
+  // 0 unten
+  speedCtx.fillStyle = 'rgba(0,229,160,0.35)';
+  speedCtx.fillText('0', YAXIS_W - 3, H - 4);
+  // Mittelwert
+  const midS = maxS / 2;
+  speedCtx.fillStyle = 'rgba(0,229,160,0.35)';
+  speedCtx.fillText(Math.round(midS) + '', YAXIS_W - 3, yS(midS));
+
+  // ── Y-Achse HM/h (rechts, weiß) ──
+  const hasAlt = altRatesSampled.some(v=>Math.abs(v)>5);
+  if (hasAlt) {
+    speedCtx.textAlign = 'left';
+    speedCtx.fillStyle = 'rgba(255,255,255,0.5)';
+    speedCtx.fillText('+' + Math.round(maxA) + '', YAXIS_W + W + 2, yA(maxA) + 1);
+    speedCtx.fillText('-' + Math.round(maxA) + '', YAXIS_W + W + 2, yA(-maxA) - 1);
+    speedCtx.fillText('0', YAXIS_W + W + 2, yA(0));
+  }
+
+  // ── Trennlinie Y-Achse ──
+  speedCtx.beginPath();
+  speedCtx.strokeStyle='rgba(255,255,255,0.08)';
+  speedCtx.lineWidth=1;
+  speedCtx.moveTo(YAXIS_W, 0); speedCtx.lineTo(YAXIS_W, H);
+  speedCtx.stroke();
+
+  // ── Speed fill ──
   const grad=speedCtx.createLinearGradient(0,0,0,H);
   grad.addColorStop(0,'rgba(0,229,160,0.25)'); grad.addColorStop(1,'rgba(0,229,160,0)');
-  speedCtx.beginPath(); speeds.forEach((s,i)=>{const x=(i/(speeds.length-1))*W;i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});
-  speedCtx.lineTo(W,H);speedCtx.lineTo(0,H);speedCtx.closePath();speedCtx.fillStyle=grad;speedCtx.fill();
-  // Speed line
+  speedCtx.beginPath();
+  speeds.forEach((s,i)=>{const x=xOf(i,speeds.length);i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});
+  speedCtx.lineTo(xOf(speeds.length-1,speeds.length),H);
+  speedCtx.lineTo(YAXIS_W,H);
+  speedCtx.closePath();speedCtx.fillStyle=grad;speedCtx.fill();
+
+  // ── Speed line (grün) ──
   speedCtx.beginPath();speedCtx.setLineDash([]);speedCtx.strokeStyle='#00e5a0';speedCtx.lineWidth=2;speedCtx.lineJoin='round';
-  speeds.forEach((s,i)=>{const x=(i/(speeds.length-1))*W;i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});speedCtx.stroke();
-  // HM/h line (geglättet, kann negativ sein)
-  if(altRatesSampled.some(v=>Math.abs(v)>5)){
-    speedCtx.beginPath();speedCtx.setLineDash([3,3]);speedCtx.strokeStyle='#a855f7';speedCtx.lineWidth=1.5;speedCtx.lineJoin='round';
-    sampledIdx.forEach((idx,i)=>{const x=(idx/(points.length-1))*W;const y=yA(altRatesSampled[i]);i===0?speedCtx.moveTo(x,y):speedCtx.lineTo(x,y);});
+  speeds.forEach((s,i)=>{const x=xOf(i,speeds.length);i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});
+  speedCtx.stroke();
+
+  // ── HM/h line (weiß, gestrichelt) ──
+  if(hasAlt){
+    speedCtx.beginPath();speedCtx.setLineDash([4,3]);speedCtx.strokeStyle='rgba(255,255,255,0.75)';speedCtx.lineWidth=1.5;speedCtx.lineJoin='round';
+    sampledIdx.forEach((idx,i)=>{
+      const x=xOf(idx,points.length);
+      const y=yA(altRatesSampled[i]);
+      i===0?speedCtx.moveTo(x,y):speedCtx.lineTo(x,y);
+    });
     speedCtx.stroke();speedCtx.setLineDash([]);
   }
 }
@@ -1462,7 +1504,23 @@ function renderDetailView(run){
 // ══════════════════════════════════════════════
 //  STORAGE
 // ══════════════════════════════════════════════
-function loadRuns(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]');}catch{return[];}}
+function loadRuns(){
+  try {
+    // Migration: alte v3-Daten übernehmen falls v4 noch leer
+    const v4 = localStorage.getItem(STORAGE_KEY);
+    if (!v4 || JSON.parse(v4).length === 0) {
+      const v3 = localStorage.getItem('lauftracker_runs_v3');
+      if (v3) {
+        const old = JSON.parse(v3);
+        // type: 'other' für alle alten Einträge ohne Tag
+        old.forEach(r => { if (!r.type) r.type = 'other'; });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(old));
+        return old;
+      }
+    }
+    return JSON.parse(v4 || '[]');
+  } catch { return []; }
+}
 function saveRuns(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(runs));}catch(e){toast('Speicherfehler: '+e.message);}}
 
 
