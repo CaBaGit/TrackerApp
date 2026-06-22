@@ -208,6 +208,14 @@ body.offline #offlineBadge { display:block; }
 .speed-gradient-bar { height:6px; border-radius:3px; background:linear-gradient(90deg,#ef4444,#f97316,#eab308,#00e5a0); margin:4px 0; }
 .speed-gradient-labels { display:flex; justify-content:space-between; font-size:9px; color:var(--muted); }
 
+/* ── ACTIVITY FILTER TABS ── */
+.activity-filter-row { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+.act-filter-btn { padding:6px 12px; border-radius:20px; font-size:11px; font-weight:600; border:1px solid var(--border); background:var(--card); color:var(--muted); cursor:pointer; }
+.act-filter-btn.active { background:var(--accent); color:#001a0d; border-color:var(--accent); }
+
+/* Editable name inline */
+.run-name-edit { background:none; border:none; border-bottom:1px solid var(--accent); color:var(--text); font-size:13px; font-weight:600; width:100%; outline:none; padding:2px 0; }
+
 /* ── PLAN PAGE ── */
 #page-plan { background:var(--bg); overflow:hidden; }
 #planMap { flex:1; min-height:0; }
@@ -255,18 +263,30 @@ body.offline #offlineBadge { display:block; }
 }
 #screenLockHint.flash { color:rgba(255,255,255,0.6); }
 #screenLockNumbers {
-  display:flex; gap:24px; align-items:center; justify-content:center;
+  display:flex; gap:16px; align-items:center; justify-content:center;
+  width:100%; max-width:100vw; padding:0 16px;
+  box-sizing:border-box; flex-wrap:nowrap;
 }
 .lock-num {
   font-family:var(--mono); font-weight:700; color:#fff;
-  font-size:clamp(32px,15vw,80px); line-height:0.92;
-  text-align:center;
+  font-size:clamp(28px,11vw,60px); line-height:0.92;
+  text-align:center; flex:1; min-width:0;
+  overflow:hidden; text-overflow:ellipsis;
 }
 .lock-timer {
   font-family:var(--mono); font-size:clamp(36px,10vw,56px);
   font-weight:300; color:rgba(255,255,255,0.06);
   letter-spacing:-0.02em;
 }
+/* Aktivitäts-Toggle (oben links auf Karte) */
+#btnActivity {
+  position:absolute; top:10px; left:10px; z-index:500;
+  width:36px; height:36px; border-radius:8px;
+  background:var(--surface); border:1px solid var(--border);
+  font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,0.4); line-height:1;
+}
+
 /* Lock button in ctrl bar */
 #btnLock {
   flex:0 0 auto; padding:14px 20px; background:var(--card);
@@ -299,6 +319,7 @@ body.offline #offlineBadge { display:block; }
       <!-- PANEL 0: Karte + kompakte Stats -->
       <div class="view-panel" id="panelMap">
         <div id="map">
+          <button id="btnActivity" onclick="cycleActivity()" title="Aktivitätstyp">🏃</button>
           <div class="map-controls">
             <button class="map-ctrl-btn active-btn" id="btnFollow"   onclick="toggleFollow()">◎</button>
             <button class="map-ctrl-btn"            id="btnFitAll"   onclick="fitRoute()">⤢</button>
@@ -337,7 +358,7 @@ body.offline #offlineBadge { display:block; }
         <div class="big-bottom">
           <div class="big-grid">
             <div class="big-box accent"><div class="big-box-label">Distanz</div><div class="big-box-val" id="bigDist">0.00</div><div class="big-box-unit">km</div></div>
-            <div class="big-box"><div class="big-box-label">Pace ⌀20s</div><div class="big-box-val" id="bigPace">–:––</div><div class="big-box-unit">min/km</div></div>
+            <div class="big-box" id="bigPaceBox"><div class="big-box-label" id="bigPaceLabel">Pace ⌀20s</div><div class="big-box-val" id="bigPace">–:––</div><div class="big-box-unit" id="bigPaceUnit">min/km</div></div>
             <div class="big-box blue"><div class="big-box-label">Speed ⌀20s</div><div class="big-box-val" id="bigSpeed">0.0</div><div class="big-box-unit">km/h</div></div>
             <div class="big-box"><div class="big-box-label">Ø Speed</div><div class="big-box-val" id="bigAvgSpeed">0.0</div><div class="big-box-unit">km/h</div></div>
             <div class="big-box accent"><div class="big-box-label">Höhenmeter</div><div class="big-box-val" id="bigAlt">0</div><div class="big-box-unit">m ↑</div></div>
@@ -359,7 +380,7 @@ body.offline #offlineBadge { display:block; }
             <div class="full-box-combo"><span class="full-box-val" id="fullDist">0.00</span><span class="full-box-unit-inline">km</span></div>
           </div>
           <div class="full-box c-white">
-            <div class="full-box-combo"><span class="full-box-val" id="fullPace">–:––</span><span class="full-box-unit-inline">min/km</span></div>
+            <div class="full-box-combo"><span class="full-box-val" id="fullPace">–:––</span><span class="full-box-unit-inline" id="fullPaceUnit">min/km</span></div>
           </div>
           <div class="full-box c-blue">
             <div class="full-box-combo"><span class="full-box-val" id="fullSpeed">0.0</span><span class="full-box-unit-inline">km/h</span></div>
@@ -402,8 +423,14 @@ body.offline #offlineBadge { display:block; }
 <!-- ════════════════ HISTORY ════════════════ -->
 <div class="page" id="page-history">
   <div style="padding:16px 16px 0">
-    <div class="page-title">Meine Läufe</div>
-    <div class="page-sub" id="historySub">Keine Läufe gespeichert</div>
+    <div class="page-title">Aktivitäten</div>
+    <div class="page-sub" id="historySub">Keine Aktivitäten gespeichert</div>
+    <div class="activity-filter-row">
+      <button class="act-filter-btn active" id="filterAll"  onclick="setHistoryFilter('all')">Alle</button>
+      <button class="act-filter-btn"        id="filterRun"  onclick="setHistoryFilter('run')">🏃 Laufen</button>
+      <button class="act-filter-btn"        id="filterBike" onclick="setHistoryFilter('bike')">🚴 Rad</button>
+      <button class="act-filter-btn"        id="filterOther" onclick="setHistoryFilter('other')">✕ Sonstige</button>
+    </div>
     <div class="import-row">
       <label class="btn-import" style="cursor:pointer">📂 JSON<input type="file" accept=".json" style="display:none" onchange="importJSON(event)"></label>
       <label class="btn-import" style="cursor:pointer">🗺 GPX<input type="file" accept=".gpx,.xml" style="display:none" onchange="importGPX(event)"></label>
@@ -476,7 +503,7 @@ body.offline #offlineBadge { display:block; }
   </button>
   <button class="nav-btn" id="nav-history" onclick="showPage('history')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
-    Läufe
+    Aktivität
   </button>
 </div>
 
@@ -540,6 +567,36 @@ window.addEventListener('offline', updateOnlineStatus);
 updateOnlineStatus();
 
 // ══════════════════════════════════════════════
+//  ACTIVITY TYPE
+// ══════════════════════════════════════════════
+function cycleActivity() {
+  const idx = (ACTIVITY_TYPES.indexOf(activityType) + 1) % ACTIVITY_TYPES.length;
+  activityType = ACTIVITY_TYPES[idx];
+  updateActivityUI();
+}
+
+function updateActivityUI() {
+  const btn = document.getElementById('btnActivity');
+  if (btn) btn.textContent = ACTIVITY_ICONS[activityType];
+  // Pace-Feld-Label anpassen
+  const isBike = activityType === 'bike';
+  const lbl  = document.getElementById('bigPaceLabel');
+  const unit = document.getElementById('bigPaceUnit');
+  const fu   = document.getElementById('fullPaceUnit');
+  if (lbl)  lbl.textContent  = isBike ? 'Watt ⌀20s' : 'Pace ⌀20s';
+  if (unit) unit.textContent = isBike ? 'W' : 'min/km';
+  if (fu)   fu.textContent   = isBike ? 'W' : 'min/km';
+}
+
+// ── History Filter ──
+function setHistoryFilter(f) {
+  historyFilter = f;
+  document.querySelectorAll('.act-filter-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('filter' + f.charAt(0).toUpperCase() + f.slice(1)).classList.add('active');
+  renderHistory();
+}
+
+// ══════════════════════════════════════════════
 //  SWIPE LOGIC
 // ══════════════════════════════════════════════
 let currentView = 0;
@@ -600,12 +657,30 @@ swipeEl.addEventListener('touchend', () => {
 // ══════════════════════════════════════════════
 //  CONSTANTS & STATE
 // ══════════════════════════════════════════════
-const STORAGE_KEY   = 'lauftracker_runs_v3';
+const STORAGE_KEY   = 'lauftracker_runs_v4';
+const ACTIVITY_TYPES = ['run','bike','other'];
+const ACTIVITY_ICONS = {run:'🏃', bike:'🚴', other:'✕'};
+
+// Watt-Berechnung (Rennrad): Konczer-Formel
+// m=90kg, CdA=0.32m², Crr=0.004, rho=1.225kg/m³, g=9.81m/s²
+const W_MASS = 90, W_CDA = 0.32, W_CRR = 0.004, W_RHO = 1.225, W_G = 9.81;
+function calcWatt(speedKmh, gradientPct) {
+  if (speedKmh < 0.5) return 0;
+  const v = speedKmh / 3.6;
+  const k = gradientPct / 100;
+  const pAir   = 0.5 * W_CDA * W_RHO * Math.pow(v, 3);
+  const pRoll  = W_MASS * W_G * W_CRR * v;
+  const vSteig = (k * v) / Math.sqrt(1 + k * k);
+  const pSteig = W_MASS * W_G * vSteig;
+  return Math.max(0, Math.round(pAir + pRoll + pSteig));
+}
 const SPEED_AVG_SEC = 20;
 const ALT_AVG_SEC   = 60;   // 1 Minute Glättungsfenster für Höhe
 const ALT_MIN_DELTA = 2;
 
 let runs = loadRuns();
+let activityType = 'run'; // 'run' | 'bike' | 'other'
+let historyFilter = 'all';
 let currentRun = null;
 let running = false, elapsed = 0, startTime = null, timerInt = null, watchId = null;
 let followMode = true, refTrackVisible = false, activeRefRunId = null;
@@ -692,7 +767,7 @@ function initTrackerMap() {
   if (!tMap) {
     tMap = makeMap('map');
     tCurrentLine = L.polyline([],{color:'#00e5a0',weight:4,opacity:0.9}).addTo(tMap);
-    tRefLine     = L.polyline([],{color:'#3b82f6',weight:3,opacity:0.5,dashArray:'6 4'}).addTo(tMap);
+    tRefLine     = L.polyline([],{color:'#ef4444',weight:3,opacity:0.6,dashArray:'6 4'}).addTo(tMap);
     tStartDot    = L.circleMarker([0,0],{radius:5,color:'#00e5a0',fillColor:'#00e5a0',fillOpacity:1});
     tMarker      = L.circleMarker([0,0],{radius:7,color:'#fff',fillColor:'#3b82f6',fillOpacity:1,weight:2});
     navigator.geolocation.getCurrentPosition(p=>{tMap.setView([p.coords.latitude,p.coords.longitude],16);},()=>{});
@@ -1094,11 +1169,24 @@ function onGPS(pos) {
   const pace20      = avgSpeed20>0.1?3600/avgSpeed20:0;
   const hmh         = Math.round(avgAltRate/10)*10; // auf 10m runden, negative Werte erlaubt
 
+  // Steigung aus geglätteter Höhe (letzte 20s) für Watt-Berechnung
+  let gradient = 0;
+  const withAlt20 = currentRun.points.filter(p=>p.alt!=null&&p.ts>=(ts-20000));
+  if (withAlt20.length >= 2) {
+    const dAlt  = withAlt20[withAlt20.length-1].alt - withAlt20[0].alt;
+    const dDist = haversine(withAlt20[0].lat,withAlt20[0].lng,withAlt20[withAlt20.length-1].lat,withAlt20[withAlt20.length-1].lng)*1000;
+    gradient = dDist > 5 ? (dAlt / dDist) * 100 : 0;
+  }
+  const watt = calcWatt(avgSpeed20, gradient);
+  const isBike = activityType === 'bike';
+  const paceOrWatt      = isBike ? watt      : fmtPace(pace20);
+  const paceOrWattStr   = String(paceOrWatt);
+
   // Alle Felder updaten
   const v={
-    statDist:currentRun.dist.toFixed(2), statPace:fmtPace(pace20), statSpeed:avgSpeed20.toFixed(1), statAvgSpeed:totalAvgSpd.toFixed(1), statAlt:Math.round(currentRun.elevGain), statAltRate:hmh,
-    bigDist:currentRun.dist.toFixed(2),  bigPace:fmtPace(pace20),  bigSpeed:avgSpeed20.toFixed(1),  bigAvgSpeed:totalAvgSpd.toFixed(1),  bigAlt:Math.round(currentRun.elevGain),  bigAltRate:hmh,
-    fullDist:currentRun.dist.toFixed(2), fullPace:fmtPace(pace20), fullSpeed:avgSpeed20.toFixed(1), fullAvgSpeed:totalAvgSpd.toFixed(1), fullAlt:Math.round(currentRun.elevGain), fullAltRate:hmh,
+    statDist:currentRun.dist.toFixed(2), statSpeed:avgSpeed20.toFixed(1), statAvgSpeed:totalAvgSpd.toFixed(1), statAlt:Math.round(currentRun.elevGain), statAltRate:hmh,
+    bigDist:currentRun.dist.toFixed(2),  bigPace:paceOrWattStr, bigSpeed:avgSpeed20.toFixed(1),  bigAvgSpeed:totalAvgSpd.toFixed(1),  bigAlt:Math.round(currentRun.elevGain),  bigAltRate:hmh,
+    fullDist:currentRun.dist.toFixed(2), fullPace:paceOrWattStr, fullSpeed:avgSpeed20.toFixed(1), fullAvgSpeed:totalAvgSpd.toFixed(1), fullAlt:Math.round(currentRun.elevGain), fullAltRate:hmh,
   };
   Object.entries(v).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.textContent=val;});
   document.getElementById('speedChartLabel').textContent=avgSpeed20.toFixed(1)+' km/h';
@@ -1158,7 +1246,7 @@ function updateRefMarker(distKm) {
   for(let i=1;i<run.points.length;i++){
     cum+=haversine(run.points[i-1].lat,run.points[i-1].lng,run.points[i].lat,run.points[i].lng);
     if(cum>=distKm){
-      if(!tRefMarker){tRefMarker=L.circleMarker([run.points[i].lat,run.points[i].lng],{radius:7,color:'#3b82f6',fillColor:'#3b82f6',fillOpacity:0.8,weight:2});if(tMap)tRefMarker.addTo(tMap);}
+      if(!tRefMarker){tRefMarker=L.circleMarker([run.points[i].lat,run.points[i].lng],{radius:7,color:'#ef4444',fillColor:'#ef4444',fillOpacity:0.8,weight:2});if(tMap)tRefMarker.addTo(tMap);}
       else tRefMarker.setLatLng([run.points[i].lat,run.points[i].lng]);
       break;
     }
@@ -1266,7 +1354,7 @@ function importGPX(event) {
         if(prevPt){const d=haversine(prevPt.lat,prevPt.lng,lat,lng),dt=(ts-prevPt.ts)/1000;speed=dt>0?Math.min((d/dt)*3600,40):0;cumDist+=d;if(alt!=null&&prevPt.alt!=null){const dA=alt-prevPt.alt;if(dA>=ALT_MIN_DELTA)elevGain+=dA;}const km=Math.floor(cumDist);if(km>lastSplitKm){const t0=trkpts[0].querySelector('time');splits.push({km,elapsed:(ts-(t0?new Date(t0.textContent).getTime():ts))/1000});lastSplitKm=km;}}
         points.push({lat,lng,ts,speed,alt,altRate:0});prevPt={lat,lng,ts,alt};
       });
-      const run={id:points[0].ts,startTs:points[0].ts,duration:(points[points.length-1].ts-points[0].ts),dist:cumDist,elevGain,points,splits,source:'gpx',name:xml.querySelector('name')?.textContent||file.name};
+      const run={id:points[0].ts,startTs:points[0].ts,duration:(points[points.length-1].ts-points[0].ts),dist:cumDist,elevGain,points,splits,source:'gpx',name:xml.querySelector('name')?.textContent||file.name,type:'other'};
       if(!runs.find(x=>x.id===run.id)){runs.unshift(run);saveRuns();toast('GPX importiert: '+cumDist.toFixed(2)+' km');renderHistory();}else toast('Track bereits vorhanden');
     }catch(err){toast('GPX-Fehler: '+err.message);}
   };
@@ -1278,14 +1366,25 @@ function importGPX(event) {
 // ══════════════════════════════════════════════
 function renderHistory() {
   const list=document.getElementById('runList'),sub=document.getElementById('historySub');
-  if(!runs.length){sub.textContent='Keine Läufe gespeichert';list.innerHTML=`<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg><p>Starte deinen ersten Lauf<br>oder importiere eine GPX-Datei</p></div>`;return;}
-  sub.textContent=`${runs.length} Läufe · ${runs.reduce((a,r)=>a+r.dist,0).toFixed(1)} km gesamt`;
-  list.innerHTML=runs.map(run=>{
+  // Filter
+  const filtered = historyFilter==='all' ? runs : runs.filter(r=>(r.type||'other')===historyFilter);
+  if(!runs.length){
+    sub.textContent='Keine Aktivitäten gespeichert';
+    list.innerHTML=`<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg><p>Starte deine erste Aktivität<br>oder importiere eine GPX-Datei</p></div>`;
+    return;
+  }
+  sub.textContent=`${filtered.length} von ${runs.length} Aktivitäten · ${filtered.reduce((a,r)=>a+r.dist,0).toFixed(1)} km`;
+  list.innerHTML=filtered.map(run=>{
     const dur=run.duration?fmtTime(run.duration/1000):'–:––:––';
     const pace=run.duration&&run.dist>0?fmtPace((run.duration/1000)/run.dist):'–:––';
     const isRef=run.id===activeRefRunId;
+    const icon=ACTIVITY_ICONS[run.type||'other']||'✕';
+    const displayName=run.name||fmtDate(run.startTs);
     return `<div class="run-card ${isRef?'selected':''}">
-      <div class="run-card-top"><div class="run-card-date">${run.name||fmtDate(run.startTs)}</div><div class="run-card-type ${run.source==='gpx'?'gpx':''}">${run.source==='gpx'?'GPX':run.source==='json'?'JSON':'Aufnahme'}</div></div>
+      <div class="run-card-top">
+        <div class="run-card-date" id="nameDisplay_${run.id}" onclick="editName(${run.id})" style="cursor:pointer;flex:1">${icon} ${displayName}</div>
+        <div class="run-card-type ${run.source==='gpx'?'gpx':''}">${run.source==='gpx'?'GPX':run.source==='json'?'JSON':'Aufnahme'}</div>
+      </div>
       <div class="run-card-stats">
         <div class="run-stat"><span class="run-stat-val">${run.dist.toFixed(2)}</span> <span class="run-stat-lbl">km</span></div>
         <div class="run-stat"><span class="run-stat-val">${dur}</span> <span class="run-stat-lbl">Zeit</span></div>
@@ -1295,11 +1394,39 @@ function renderHistory() {
       <div class="run-card-actions">
         <button class="run-action-btn primary" onclick="openDetail(${run.id})">Details</button>
         <button class="run-action-btn" onclick="setAsRef(${run.id})">${isRef?'★ Ref':'☆ Ref'}</button>
+        <button class="run-action-btn" onclick="cycleRunType(${run.id})">${icon} Typ</button>
         <button class="run-action-btn" onclick="reexportRun(${run.id})">↓ GPX</button>
         <button class="run-action-btn danger" onclick="deleteRun(${run.id})">✕</button>
       </div>
     </div>`;
   }).join('');
+}
+
+function editName(id) {
+  const run = runs.find(r=>r.id===id); if(!run) return;
+  const el = document.getElementById('nameDisplay_'+id); if(!el) return;
+  const icon = ACTIVITY_ICONS[run.type||'other']||'✕';
+  const currentName = run.name || fmtDate(run.startTs);
+  el.innerHTML = `<input class="run-name-edit" id="nameInput_${id}" value="${currentName}"
+    onblur="saveName(${id})" onkeydown="if(event.key==='Enter')saveName(${id})" autofocus>`;
+  const inp = document.getElementById('nameInput_'+id);
+  if(inp){ inp.focus(); inp.select(); }
+}
+
+function saveName(id) {
+  const run = runs.find(r=>r.id===id); if(!run) return;
+  const inp = document.getElementById('nameInput_'+id); if(!inp) return;
+  const newName = inp.value.trim();
+  if(newName) run.name = newName;
+  saveRuns();
+  renderHistory();
+}
+
+function cycleRunType(id) {
+  const run = runs.find(r=>r.id===id); if(!run) return;
+  const idx = (ACTIVITY_TYPES.indexOf(run.type||'other')+1) % ACTIVITY_TYPES.length;
+  run.type = ACTIVITY_TYPES[idx];
+  saveRuns(); renderHistory();
 }
 function setAsRef(id){activeRefRunId=activeRefRunId===id?null:id;refTrackVisible=!!activeRefRunId;if(tRefLine){if(activeRefRunId){const run=runs.find(r=>r.id===id);tRefLine.setLatLngs(run?run.points.map(p=>[p.lat,p.lng]):[]);}else{tRefLine.setLatLngs([]);if(tRefMarker&&tMap)tMap.removeLayer(tRefMarker);tRefMarker=null;}}document.getElementById('btnRefTrack').className='map-ctrl-btn'+(activeRefRunId?' active-btn':'');toast(activeRefRunId?'Referenztrack gesetzt':'Referenztrack entfernt');renderHistory();}
 function deleteRun(id){if(!confirm('Lauf wirklich löschen?'))return;runs=runs.filter(r=>r.id!==id);saveRuns();if(activeRefRunId===id){activeRefRunId=null;if(tRefLine)tRefLine.setLatLngs([]);}renderHistory();}
