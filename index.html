@@ -104,20 +104,21 @@ body.offline #offlineBadge { display:block; }
 .chart-legend-line { width:16px; height:2px; border-radius:1px; }
 #speedCanvas { width:100%; flex:1; min-height:0; display:block; }
 
-/* ── Panel 1: Karte (50%) + große Stats (50%) ── */
+/* ── Panel 1: Karte (50%) + Zeilen-Stats (50%) ── */
 #panelBig { position:relative; height:100%; }
 #map2Wrap { height:50%; position:relative; flex-shrink:0; }
 #map2 { height:100%; position:relative; z-index:1; }
 .map2-controls { position:absolute; top:8px; right:8px; z-index:500; display:flex; flex-direction:column; gap:5px; }
-.big-bottom { background:var(--bg); padding:8px 10px; height:50%; display:flex; flex-direction:column; min-height:0; }
-.big-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr 1fr; gap:6px; flex:1; min-height:0; }
-.big-box { background:var(--card); border-radius:12px; border:1px solid var(--border); padding:2px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; }
-.big-box-label { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:3px; }
-.big-box-val   { font-family:var(--mono); font-size:clamp(26px,9.5vw,48px); font-weight:700; color:var(--text); line-height:1; }
-.big-box-unit  { font-size:10px; color:var(--muted); margin-top:2px; }
-.big-box.accent .big-box-val { color:var(--accent); }
-.big-box.blue   .big-box-val { color:var(--blue); }
-.big-box.purple .big-box-val { color:var(--purple); }
+.big-bottom { background:var(--bg); padding:4px 14px 2px; height:50%; display:flex; flex-direction:column; min-height:0; }
+.big-rows { flex:1; display:flex; flex-direction:column; justify-content:space-evenly; min-height:0; }
+.big-row { display:flex; align-items:baseline; gap:10px; padding:0 2px; border-bottom:1px solid rgba(255,255,255,0.05); }
+.big-row:last-child { border-bottom:none; }
+.big-row-unit { font-family:var(--mono); font-size:clamp(11px,3vw,16px); font-weight:500; color:var(--muted); width:clamp(48px,13vw,72px); flex-shrink:0; }
+.big-row-val  { font-family:var(--mono); font-size:clamp(28px,9.5vw,56px); font-weight:700; line-height:1; flex:1; }
+.big-row-val.c-accent { color:var(--accent); }
+.big-row-val.c-blue   { color:var(--blue); }
+.big-row-val.c-white  { color:var(--text); }
+.big-row-val.c-purple { color:var(--purple); }
 
 /* ── Panel 2: Vollbild-Daten (kein Karte) ── */
 #panelFull {
@@ -125,28 +126,50 @@ body.offline #offlineBadge { display:block; }
   display:flex; flex-direction:column;
   padding:12px 14px 0;
 }
-.full-timer { text-align:center; font-family:var(--mono); font-size:clamp(24px,7vw,36px); font-weight:300; letter-spacing:-0.02em; background:linear-gradient(120deg,var(--text) 30%,var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:6px; flex-shrink:0; }
-.full-status { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:6px; flex-shrink:0; }
-.full-grid {
-  flex:1; display:grid;
-  grid-template-columns:1fr 1fr;
-  grid-template-rows:1fr 1fr 1fr;
-  gap:6px;
-  min-height:0;
-  margin-bottom:6px;
+/* ── Panel 2: Vollbild-Zeilen ── */
+#panelFull {
+  background:var(--bg);
+  display:flex; flex-direction:column;
+  padding:8px 16px 4px;
 }
-.full-box {
-  background:var(--card); border-radius:14px; border:1px solid var(--border);
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  padding:2px; overflow:hidden;
+.full-header {
+  display:flex; align-items:center; gap:10px;
+  flex-shrink:0; margin-bottom:4px;
 }
-.full-box-combo { display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:0.92; }
-.full-box-val   { font-family:var(--mono); font-size:clamp(32px,15vw,80px); font-weight:700; line-height:0.92; }
-.full-box-unit-inline { font-family:var(--mono); font-size:clamp(12px,4vw,20px); color:var(--muted); font-weight:500; margin-top:3px; }
-.full-box.c-accent .full-box-val { color:var(--accent); }
-.full-box.c-blue   .full-box-val { color:var(--blue); }
-.full-box.c-purple .full-box-val { color:var(--purple); }
-.full-box.c-white  .full-box-val { color:var(--text); }
+.full-header-timer {
+  font-family:var(--mono); font-size:clamp(16px,4.5vw,22px);
+  font-weight:300; letter-spacing:-0.01em;
+  background:linear-gradient(120deg,var(--text) 30%,var(--accent));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.full-rows {
+  flex:1; display:flex; flex-direction:column;
+  justify-content:space-evenly; min-height:0;
+}
+.full-row {
+  display:flex; align-items:baseline;
+  gap:10px; padding:0 4px;
+  border-bottom:1px solid rgba(255,255,255,0.05);
+}
+.full-row:last-child { border-bottom:none; }
+.full-row-unit {
+  font-family:var(--mono);
+  font-size:clamp(13px,3.8vw,20px);
+  font-weight:500; color:var(--muted);
+  width:clamp(52px,14vw,80px); flex-shrink:0;
+  text-align:left;
+}
+.full-row-val {
+  font-family:var(--mono);
+  font-size:clamp(36px,11vw,64px);
+  font-weight:700; line-height:1;
+  flex:1;
+}
+.full-row-val.c-accent { color:var(--accent); }
+.full-row-val.c-blue   { color:var(--blue); }
+.full-row-val.c-white  { color:var(--text); }
+.full-row-val.c-purple { color:var(--purple); }
 
 /* ── Controls (shared bottom bar) ── */
 #ctrlBar { background:var(--bg); padding:0 14px 10px; flex-shrink:0; }
@@ -356,44 +379,51 @@ body.offline #offlineBadge { display:block; }
           </div>
         </div>
         <div class="big-bottom">
-          <div class="big-grid">
-            <div class="big-box accent"><div class="big-box-label">Distanz</div><div class="big-box-val" id="bigDist">0.00</div><div class="big-box-unit">km</div></div>
-            <div class="big-box" id="bigPaceBox"><div class="big-box-label" id="bigPaceLabel">Pace ⌀20s</div><div class="big-box-val" id="bigPace">–:––</div><div class="big-box-unit" id="bigPaceUnit">min/km</div></div>
-            <div class="big-box blue"><div class="big-box-label">Speed ⌀20s</div><div class="big-box-val" id="bigSpeed">0.0</div><div class="big-box-unit">km/h</div></div>
-            <div class="big-box"><div class="big-box-label">Ø Speed</div><div class="big-box-val" id="bigAvgSpeed">0.0</div><div class="big-box-unit">km/h</div></div>
-            <div class="big-box accent"><div class="big-box-label">Höhenmeter</div><div class="big-box-val" id="bigAlt">0</div><div class="big-box-unit">m ↑</div></div>
-            <div class="big-box purple"><div class="big-box-label">HM/h ⌀1min</div><div class="big-box-val" id="bigAltRate">0</div><div class="big-box-unit">m/h</div></div>
+          <div class="big-rows">
+            <div class="big-row"><span class="big-row-unit">km</span><span class="big-row-val c-accent" id="bigDist">0.00</span></div>
+            <div class="big-row"><span class="big-row-unit" id="bigPaceUnit">min/km</span><span class="big-row-val c-white" id="bigPace">–:––</span></div>
+            <div class="big-row"><span class="big-row-unit">km/h</span><span class="big-row-val c-blue" id="bigSpeed">0.0</span></div>
+            <div class="big-row"><span class="big-row-unit">⌀km/h</span><span class="big-row-val c-white" id="bigAvgSpeed">0.0</span></div>
+            <div class="big-row"><span class="big-row-unit">hm↑</span><span class="big-row-val c-accent" id="bigAlt">0</span></div>
+            <div class="big-row"><span class="big-row-unit">hm/h</span><span class="big-row-val c-purple" id="bigAltRate">0</span></div>
           </div>
         </div>
       </div>
 
       <!-- PANEL 2: Vollbild ohne Karte -->
       <div class="view-panel" id="panelFull">
-        <div class="full-timer" id="timerFull">00:00:00</div>
-        <div class="full-status">
+        <div class="full-header">
           <div class="gps-dot" id="gpsDotFull"></div>
-          <span style="font-size:11px;color:var(--muted)" id="gpsLabelFull">GPS wird gesucht…</span>
-          <span style="font-family:var(--mono);font-size:11px;color:var(--accent)" id="gpsAccFull"></span>
+          <span class="full-header-timer" id="timerFull">00:00:00</span>
+          <span style="font-size:10px;color:var(--muted)" id="gpsLabelFull">GPS wird gesucht…</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--accent)" id="gpsAccFull"></span>
         </div>
-        <div class="full-grid">
-          <div class="full-box c-accent">
-            <div class="full-box-combo"><span class="full-box-val" id="fullDist">0.00</span><span class="full-box-unit-inline">km</span></div>
+        <div class="full-rows">
+          <div class="full-row">
+            <span class="full-row-unit">km</span>
+            <span class="full-row-val c-accent" id="fullDist">0.00</span>
           </div>
-          <div class="full-box c-white">
-            <div class="full-box-combo"><span class="full-box-val" id="fullPace">–:––</span><span class="full-box-unit-inline" id="fullPaceUnit">min/km</span></div>
+          <div class="full-row">
+            <span class="full-row-unit" id="fullPaceUnit">min/km</span>
+            <span class="full-row-val c-white" id="fullPace">–:––</span>
           </div>
-          <div class="full-box c-blue">
-            <div class="full-box-combo"><span class="full-box-val" id="fullSpeed">0.0</span><span class="full-box-unit-inline">km/h</span></div>
+          <div class="full-row">
+            <span class="full-row-unit">km/h</span>
+            <span class="full-row-val c-blue" id="fullSpeed">0.0</span>
           </div>
-          <div class="full-box c-white">
-            <div class="full-box-combo"><span class="full-box-val" id="fullAvgSpeed">0.0</span><span class="full-box-unit-inline">⌀km/h</span></div>
+          <div class="full-row">
+            <span class="full-row-unit">⌀km/h</span>
+            <span class="full-row-val c-white" id="fullAvgSpeed">0.0</span>
           </div>
-          <div class="full-box c-accent">
-            <div class="full-box-combo"><span class="full-box-val" id="fullAlt">0</span><span class="full-box-unit-inline">m↑</span></div>
+          <div class="full-row">
+            <span class="full-row-unit">hm↑</span>
+            <span class="full-row-val c-accent" id="fullAlt">0</span>
           </div>
-          <div class="full-box c-purple">
-            <div class="full-box-combo"><span class="full-box-val" id="fullAltRate">0</span><span class="full-box-unit-inline">m/h</span></div>
+          <div class="full-row">
+            <span class="full-row-unit">hm/h</span>
+            <span class="full-row-val c-purple" id="fullAltRate">0</span>
           </div>
+
         </div>
       </div>
 
@@ -578,14 +608,12 @@ function cycleActivity() {
 function updateActivityUI() {
   const btn = document.getElementById('btnActivity');
   if (btn) btn.textContent = ACTIVITY_ICONS[activityType];
-  // Pace-Feld-Label anpassen
   const isBike = activityType === 'bike';
-  const lbl  = document.getElementById('bigPaceLabel');
-  const unit = document.getElementById('bigPaceUnit');
-  const fu   = document.getElementById('fullPaceUnit');
-  if (lbl)  lbl.textContent  = isBike ? 'Watt ⌀20s' : 'Pace ⌀20s';
-  if (unit) unit.textContent = isBike ? 'W' : 'min/km';
-  if (fu)   fu.textContent   = isBike ? 'W' : 'min/km';
+  // Pace-Zeile → Watt-Zeile: nur Einheit-Label wechseln
+  ['bigPaceUnit','fullPaceUnit'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = isBike ? 'W' : 'min/km';
+  });
 }
 
 // ── History Filter ──
@@ -1257,87 +1285,110 @@ function updateRefMarker(distKm) {
 //  CHARTS
 // ══════════════════════════════════════════════
 function drawLiveChart(points) {
-  const YAXIS_W = 34; // Breite der Y-Achse links
-  const W0=speedCanvas.offsetWidth||300, H=speedCanvas.offsetHeight||46;
-  speedCanvas.width=W0*devicePixelRatio; speedCanvas.height=H*devicePixelRatio;
-  speedCtx.scale(devicePixelRatio,devicePixelRatio);
+  const YAXIS_W = 30;
+  const W0 = speedCanvas.offsetWidth||300, H = speedCanvas.offsetHeight||46;
+  speedCanvas.width = W0*devicePixelRatio; speedCanvas.height = H*devicePixelRatio;
+  speedCtx.scale(devicePixelRatio, devicePixelRatio);
   speedCtx.clearRect(0,0,W0,H);
-  if(points.length<2) return;
+  if (points.length < 2) return;
+  const W = W0 - YAXIS_W;
 
-  const W = W0 - YAXIS_W; // Zeichenfläche rechts der Achse
-  const speeds=points.map(p=>p.speed||0);
-
+  const speeds = points.map(p=>p.speed||0);
   const MAX_CHART_POINTS = 60;
-  const step = Math.max(1, Math.floor(points.length / MAX_CHART_POINTS));
+  const step = Math.max(1, Math.floor(points.length/MAX_CHART_POINTS));
   const sampledIdx = [];
   for (let i=0; i<points.length; i+=step) sampledIdx.push(i);
   if (sampledIdx[sampledIdx.length-1] !== points.length-1) sampledIdx.push(points.length-1);
-
   const altRatesSampled = sampledIdx.map(i => altRateFromWindow(points.slice(0,i+1), ALT_AVG_SEC));
-  const maxA = Math.max(...altRatesSampled.map(v=>Math.abs(v)), 10);
-  const maxS = Math.max(...speeds, 1);
+  const hasAlt = altRatesSampled.some(v=>Math.abs(v)>5);
+
+  // ── Skalierung je Aktivitätsmodus ──
+  let maxS, sGridLines, minA, maxA, aGridLines;
+  if (activityType === 'run') {
+    maxS = 15; sGridLines = [5, 10];
+    minA = -1500; maxA = 1500; aGridLines = [-1000,-500,500,1000];
+  } else if (activityType === 'bike') {
+    maxS = 40; sGridLines = [10, 20, 30];
+    minA = 0; maxA = 1500; aGridLines = [500, 1000];
+  } else {
+    // dynamisch
+    maxS = Math.max(...speeds, 1);
+    sGridLines = [Math.round(maxS*0.25), Math.round(maxS*0.5), Math.round(maxS*0.75)];
+    const absMax = Math.max(...altRatesSampled.map(v=>Math.abs(v)), 10);
+    minA = -absMax; maxA = absMax;
+    aGridLines = [Math.round(absMax*0.5)];
+    if (minA < 0) aGridLines.unshift(-Math.round(absMax*0.5));
+  }
   const minS = 0;
 
-  // x: versetzt um YAXIS_W
-  const xOf = (i, total) => YAXIS_W + (i / (total - 1)) * W;
-  const yS = v => H - ((v-minS)/(maxS-minS)) * (H-6) - 2;
-  const yA = v => H/2 - (v/maxA) * (H/2-4);
+  const xOf = (i, total) => YAXIS_W + (i / (total-1)) * W;
+  const yS   = v => H - ((v-minS)/(maxS-minS)) * (H-6) - 2;
+  const yA   = v => H - ((v-minA)/(maxA-minA)) * (H-6) - 2;
 
-  // ── Y-Achse Speed (links, grün) ──
-  speedCtx.font = `${Math.round(9*devicePixelRatio)/devicePixelRatio}px sans-serif`;
-  speedCtx.textAlign = 'right';
-  speedCtx.textBaseline = 'middle';
-  // Max-Wert oben
-  speedCtx.fillStyle = 'rgba(0,229,160,0.7)';
-  speedCtx.fillText(Math.round(maxS) + '', YAXIS_W - 3, yS(maxS) + 1);
-  // 0 unten
-  speedCtx.fillStyle = 'rgba(0,229,160,0.35)';
-  speedCtx.fillText('0', YAXIS_W - 3, H - 4);
-  // Mittelwert
-  const midS = maxS / 2;
-  speedCtx.fillStyle = 'rgba(0,229,160,0.35)';
-  speedCtx.fillText(Math.round(midS) + '', YAXIS_W - 3, yS(midS));
+  speedCtx.font = `${Math.round(8*devicePixelRatio)/devicePixelRatio}px sans-serif`;
 
-  // ── Y-Achse HM/h (rechts, weiß) ──
-  const hasAlt = altRatesSampled.some(v=>Math.abs(v)>5);
+  // ── Gridlines Speed (grün, gestrichelt) ──
+  speedCtx.setLineDash([2,3]);
+  speedCtx.lineWidth = 0.5;
+  sGridLines.forEach(val => {
+    if (val <= 0 || val >= maxS) return;
+    const y = yS(val);
+    speedCtx.strokeStyle = 'rgba(0,229,160,0.2)';
+    speedCtx.beginPath(); speedCtx.moveTo(YAXIS_W,y); speedCtx.lineTo(W0,y); speedCtx.stroke();
+    speedCtx.fillStyle = 'rgba(0,229,160,0.6)';
+    speedCtx.textAlign = 'right'; speedCtx.textBaseline = 'middle';
+    speedCtx.fillText(val+'', YAXIS_W-2, y);
+  });
+  // Max-Label oben
+  speedCtx.fillStyle = 'rgba(0,229,160,0.8)';
+  speedCtx.textAlign = 'right'; speedCtx.textBaseline = 'top';
+  speedCtx.fillText(maxS+'', YAXIS_W-2, 1);
+
+  // ── Gridlines HM/h (weiß, gestrichelt, rechte Achse) ──
   if (hasAlt) {
-    speedCtx.textAlign = 'left';
-    speedCtx.fillStyle = 'rgba(255,255,255,0.5)';
-    speedCtx.fillText('+' + Math.round(maxA) + '', YAXIS_W + W + 2, yA(maxA) + 1);
-    speedCtx.fillText('-' + Math.round(maxA) + '', YAXIS_W + W + 2, yA(-maxA) - 1);
-    speedCtx.fillText('0', YAXIS_W + W + 2, yA(0));
+    aGridLines.forEach(val => {
+      const y = yA(val);
+      if (y < 2 || y > H-2) return;
+      speedCtx.strokeStyle = 'rgba(255,255,255,0.12)';
+      speedCtx.beginPath(); speedCtx.moveTo(YAXIS_W,y); speedCtx.lineTo(W0,y); speedCtx.stroke();
+      speedCtx.fillStyle = 'rgba(255,255,255,0.4)';
+      speedCtx.textAlign = 'left'; speedCtx.textBaseline = 'middle';
+      speedCtx.fillText((val>0?'+':'')+val+'', W0-YAXIS_W+2, y);
+    });
+    // Nulllinie HM/h falls im sichtbaren Bereich
+    if (minA < 0 && maxA > 0) {
+      const y0 = yA(0);
+      speedCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+      speedCtx.beginPath(); speedCtx.moveTo(YAXIS_W,y0); speedCtx.lineTo(W0,y0); speedCtx.stroke();
+    }
   }
+  speedCtx.setLineDash([]);
 
   // ── Trennlinie Y-Achse ──
-  speedCtx.beginPath();
-  speedCtx.strokeStyle='rgba(255,255,255,0.08)';
-  speedCtx.lineWidth=1;
-  speedCtx.moveTo(YAXIS_W, 0); speedCtx.lineTo(YAXIS_W, H);
-  speedCtx.stroke();
+  speedCtx.beginPath(); speedCtx.strokeStyle='rgba(255,255,255,0.08)'; speedCtx.lineWidth=1;
+  speedCtx.moveTo(YAXIS_W,0); speedCtx.lineTo(YAXIS_W,H); speedCtx.stroke();
 
   // ── Speed fill ──
-  const grad=speedCtx.createLinearGradient(0,0,0,H);
+  const grad = speedCtx.createLinearGradient(0,0,0,H);
   grad.addColorStop(0,'rgba(0,229,160,0.25)'); grad.addColorStop(1,'rgba(0,229,160,0)');
   speedCtx.beginPath();
-  speeds.forEach((s,i)=>{const x=xOf(i,speeds.length);i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});
-  speedCtx.lineTo(xOf(speeds.length-1,speeds.length),H);
-  speedCtx.lineTo(YAXIS_W,H);
-  speedCtx.closePath();speedCtx.fillStyle=grad;speedCtx.fill();
+  speeds.forEach((s,i)=>{const x=xOf(i,speeds.length); i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});
+  speedCtx.lineTo(xOf(speeds.length-1,speeds.length),H); speedCtx.lineTo(YAXIS_W,H);
+  speedCtx.closePath(); speedCtx.fillStyle=grad; speedCtx.fill();
 
-  // ── Speed line (grün) ──
-  speedCtx.beginPath();speedCtx.setLineDash([]);speedCtx.strokeStyle='#00e5a0';speedCtx.lineWidth=2;speedCtx.lineJoin='round';
-  speeds.forEach((s,i)=>{const x=xOf(i,speeds.length);i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});
+  // ── Speed line ──
+  speedCtx.beginPath(); speedCtx.setLineDash([]); speedCtx.strokeStyle='#00e5a0'; speedCtx.lineWidth=2; speedCtx.lineJoin='round';
+  speeds.forEach((s,i)=>{const x=xOf(i,speeds.length); i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});
   speedCtx.stroke();
 
-  // ── HM/h line (weiß, gestrichelt) ──
-  if(hasAlt){
-    speedCtx.beginPath();speedCtx.setLineDash([4,3]);speedCtx.strokeStyle='rgba(255,255,255,0.75)';speedCtx.lineWidth=1.5;speedCtx.lineJoin='round';
+  // ── HM/h line ──
+  if (hasAlt) {
+    speedCtx.beginPath(); speedCtx.setLineDash([4,3]); speedCtx.strokeStyle='rgba(255,255,255,0.75)'; speedCtx.lineWidth=1.5; speedCtx.lineJoin='round';
     sampledIdx.forEach((idx,i)=>{
-      const x=xOf(idx,points.length);
-      const y=yA(altRatesSampled[i]);
+      const x=xOf(idx,points.length), y=yA(altRatesSampled[i]);
       i===0?speedCtx.moveTo(x,y):speedCtx.lineTo(x,y);
     });
-    speedCtx.stroke();speedCtx.setLineDash([]);
+    speedCtx.stroke(); speedCtx.setLineDash([]);
   }
 }
 
