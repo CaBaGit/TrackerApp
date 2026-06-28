@@ -301,6 +301,18 @@ body.offline #offlineBadge { display:block; }
   font-weight:300; color:rgba(255,255,255,0.06);
   letter-spacing:-0.02em;
 }
+/* Vergleichs-Label (oben links auf Karte, neben Aktivitäts-Button) */
+#compareLabel {
+  position:absolute; top:10px; left:54px; z-index:500;
+  background:rgba(10,12,16,0.85); border:1px solid rgba(255,255,255,0.15);
+  color:#fff; font-family:var(--mono); font-size:12px; font-weight:700;
+  padding:6px 10px; border-radius:8px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.4);
+  display:none; pointer-events:none;
+  letter-spacing:0.04em;
+}
+#compareLabel.show { display:block; }
+
 /* Aktivitäts-Toggle (oben links auf Karte) */
 #btnActivity {
   position:absolute; top:10px; left:10px; z-index:500;
@@ -343,10 +355,12 @@ body.offline #offlineBadge { display:block; }
       <div class="view-panel" id="panelMap">
         <div id="map">
           <button id="btnActivity" onclick="cycleActivity()" title="Aktivitätstyp">🏃</button>
+          <div id="compareLabel"></div>
           <div class="map-controls">
             <button class="map-ctrl-btn active-btn" id="btnFollow"   onclick="toggleFollow()">◎</button>
             <button class="map-ctrl-btn"            id="btnFitAll"   onclick="fitRoute()">⤢</button>
             <button class="map-ctrl-btn"            id="btnRefTrack" onclick="toggleRefTrack()">👻</button>
+            <button class="map-ctrl-btn"            id="btnHeatmap"  onclick="toggleHeatmap()">🔥</button>
           </div>
         </div>
         <div class="tracker-bottom">
@@ -686,6 +700,12 @@ swipeEl.addEventListener('touchend', () => {
 //  CONSTANTS & STATE
 // ══════════════════════════════════════════════
 const STORAGE_KEY   = 'lauftracker_runs_v4';
+const IDB_NAME      = 'LaufTrackerDB';
+const IDB_VER       = 1;
+const HEATMAP_STEP  = 50;  // Meter zwischen Heatmap-Indexpunkten
+const MATCH_RADIUS  = 20;  // Meter Suchradius für Geschwindigkeitsvergleich
+const MATCH_ANGLE   = 35;  // Grad Winkeltoleranz
+const CELL_DEG      = 0.00045; // ~50m Gitterzelle
 const DRAFT_KEY     = 'lauftracker_draft_v1';
 const DRAFT_MAX_PTS = 3600; // max Punkte im Draft (1 Pkt/sek = 1h)
 const ACTIVITY_TYPES = ['run','bike','other'];
@@ -709,8 +729,16 @@ const ALT_AVG_SEC   = 60;   // 1 Minute Glättungsfenster für Höhe
 const ALT_MIN_DELTA = 2;
 
 let runs = loadRuns();
-let activityType = 'run'; // 'run' | 'bike' | 'other'
+let activityType = 'run';
 let historyFilter = 'all';
+
+// Heatmap / Vergleich
+let heatmapActive  = false;
+let spatialIndex   = {};      // {cellKey: [{lat,lng,bearing,speed,type},...]}
+let heatmapLayers  = [];      // Leaflet-Layer für Heatmap-Linien
+let compareSegments = [];     // aktuelle Spur-Segmente (farbig)
+let lastCompareMatch = null;  // letztes Match {mean, max, pct}
+let idb = null;               // IndexedDB-Instanz
 let currentRun = null;
 let running = false, elapsed = 0, startTime = null, timerInt = null, watchId = null;
 let followMode = true, refTrackVisible = false, activeRefRunId = null;
@@ -1184,9 +1212,23 @@ function onGPS(pos) {
     }
   } else if(currentRun.lastAlt==null&&altitude!=null) currentRun.lastAlt=altitude;
 
+  // Bearing für neuen Punkt berechnen
+  const bearing = currentRun.lastPos
+    ? calcBearing(currentRun.lastPos.lat, currentRun.lastPos.lng, lat, lng)
+    : 0;
+
   currentRun.dist+=d;
-  currentRun.points.push({lat,lng,ts,speed:rawSpeed,alt:altitude,altRate:altRateVal});
+  currentRun.points.push({lat,lng,ts,speed:rawSpeed,alt:altitude,altRate:altRateVal,bearing});
   currentRun.lastPos={lat,lng,ts};
+
+  // Geschwindigkeitsvergleich (nur wenn Heatmap aktiv)
+  if (heatmapActive && Object.keys(spatialIndex).length > 0) {
+    const match = matchSpeed(lat, lng, bearing, avgSpeed20);
+    if (match) {
+      lastCompareMatch = match;
+      updateCompareSpur(currentRun.points);
+    }
+  }
 
   const km=Math.floor(currentRun.dist);
   if(km>currentRun.lastSplitKm){currentRun.splits.push({km,elapsed:(ts-currentRun.startTs)/1000});currentRun.lastSplitKm=km;}
@@ -1423,8 +1465,26 @@ function drawDetailChart(points,canvas,ctx,refPoints) {
 // ══════════════════════════════════════════════
 function saveRun() {
   if(!currentRun||currentRun.points.length<2) return;
-  const run={id:currentRun.id,startTs:currentRun.startTs,duration:elapsed,dist:currentRun.dist,elevGain:currentRun.elevGain,points:currentRun.points,splits:currentRun.splits,source:'recorded'};
-  runs.unshift(run);saveRuns();exportGPX(run);exportJSON(run);clearDraft();
+  const run={id:currentRun.id,startTs:currentRun.startTs,duration:elapsed,dist:currentRun.dist,
+    elevGain:currentRun.elevGain,points:currentRun.points,splits:currentRun.splits,
+    source:'recorded', type:activityType};
+
+  // Bearing zu jedem Punkt hinzufügen
+  addBearingToRun(run);
+
+  // In IDB speichern
+  idbSaveRun(run).then(() => {
+    const entries = buildHeatmapEntries(run);
+    return idbSaveHeatmapEntries(entries).then(() => {
+      // Spatial-Index im RAM updaten
+      for (const e of entries) {
+        if (!spatialIndex[e.cellKey]) spatialIndex[e.cellKey] = [];
+        spatialIndex[e.cellKey].push(e);
+      }
+    });
+  }).catch(e => console.warn('IDB save error:', e));
+
+  runs.unshift(run); saveRuns(); exportGPX(run); exportJSON(run); clearDraft();
   toast('Lauf gespeichert & GPX/JSON heruntergeladen');
   document.getElementById('btnSave').disabled=true;
 }
@@ -1534,7 +1594,7 @@ function cycleRunType(id) {
   saveRuns(); renderHistory();
 }
 function setAsRef(id){activeRefRunId=activeRefRunId===id?null:id;refTrackVisible=!!activeRefRunId;if(tRefLine){if(activeRefRunId){const run=runs.find(r=>r.id===id);tRefLine.setLatLngs(run?run.points.map(p=>[p.lat,p.lng]):[]);}else{tRefLine.setLatLngs([]);if(tRefMarker&&tMap)tMap.removeLayer(tRefMarker);tRefMarker=null;}}document.getElementById('btnRefTrack').className='map-ctrl-btn'+(activeRefRunId?' active-btn':'');toast(activeRefRunId?'Referenztrack gesetzt':'Referenztrack entfernt');renderHistory();}
-function deleteRun(id){if(!confirm('Lauf wirklich löschen?'))return;runs=runs.filter(r=>r.id!==id);saveRuns();if(activeRefRunId===id){activeRefRunId=null;if(tRefLine)tRefLine.setLatLngs([]);}renderHistory();}
+function deleteRun(id){if(!confirm('Lauf wirklich löschen?'))return;runs=runs.filter(r=>r.id!==id);saveRuns();idbDeleteRun(id).catch(e=>console.warn('IDB delete:',e));if(activeRefRunId===id){activeRefRunId=null;if(tRefLine)tRefLine.setLatLngs([]);}renderHistory();}
 function reexportRun(id){const run=runs.find(r=>r.id===id);if(run){exportGPX(run);toast('GPX exportiert');}}
 
 // ══════════════════════════════════════════════
@@ -1567,6 +1627,308 @@ function renderDetailView(run){
 // ══════════════════════════════════════════════
 //  STORAGE
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  INDEXEDDB
+// ══════════════════════════════════════════════
+function initIDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VER);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('tracks')) {
+        const ts = db.createObjectStore('tracks', {keyPath:'id'});
+        ts.createIndex('type', 'type', {unique:false});
+      }
+      if (!db.objectStoreNames.contains('heatmap')) {
+        db.createObjectStore('heatmap', {keyPath:'id', autoIncrement:true});
+        db.transaction.objectStore('heatmap').createIndex('trackId','trackId',{unique:false});
+      }
+    };
+    req.onsuccess = e => { idb = e.target.result; resolve(idb); };
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function idbSaveRun(run) {
+  if (!idb) return;
+  return new Promise((res,rej) => {
+    const tx = idb.transaction('tracks','readwrite');
+    tx.objectStore('tracks').put(run);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+
+async function idbDeleteRun(id) {
+  if (!idb) return;
+  return new Promise((res,rej) => {
+    const tx = idb.transaction(['tracks','heatmap'],'readwrite');
+    tx.objectStore('tracks').delete(id);
+    // Alle Heatmap-Einträge dieses Tracks löschen
+    const idx = tx.objectStore('heatmap').index('trackId');
+    const req = idx.openCursor(IDBKeyRange.only(id));
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if (cursor) { cursor.delete(); cursor.continue(); }
+    };
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+
+async function idbLoadAllRuns() {
+  if (!idb) return [];
+  return new Promise((res,rej) => {
+    const tx  = idb.transaction('tracks','readonly');
+    const req = tx.objectStore('tracks').getAll();
+    req.onsuccess = () => res(req.result || []);
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+async function idbSaveHeatmapEntries(entries) {
+  if (!idb || !entries.length) return;
+  return new Promise((res,rej) => {
+    const tx = idb.transaction('heatmap','readwrite');
+    const store = tx.objectStore('heatmap');
+    entries.forEach(e => store.put(e));
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+
+async function idbLoadHeatmap() {
+  if (!idb) return [];
+  return new Promise((res,rej) => {
+    const tx  = idb.transaction('heatmap','readonly');
+    const req = tx.objectStore('heatmap').getAll();
+    req.onsuccess = () => res(req.result || []);
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+// ── Migration localStorage → IndexedDB ──
+async function migrateToIDB() {
+  try {
+    const existing = await idbLoadAllRuns();
+    if (existing.length > 0) return; // bereits migriert
+
+    // Lade aus localStorage
+    const v4 = localStorage.getItem(STORAGE_KEY);
+    const v3 = localStorage.getItem('lauftracker_runs_v3');
+    const raw = v4 || v3;
+    if (!raw) return;
+
+    const oldRuns = JSON.parse(raw);
+    if (!oldRuns.length) return;
+
+    // Bearing + type hinzufügen, dann in IDB speichern
+    for (const run of oldRuns) {
+      if (!run.type) run.type = 'other';
+      addBearingToRun(run);
+      await idbSaveRun(run);
+      const entries = buildHeatmapEntries(run);
+      await idbSaveHeatmapEntries(entries);
+    }
+
+    // Alte localStorage-Daten aufräumen
+    localStorage.removeItem('lauftracker_runs_v3');
+    // v4 bleibt als Fallback für loadRuns() bis wir es sicher entfernen können
+
+    toast(`${oldRuns.length} Aktivitäten migriert ✓`);
+  } catch(e) {
+    console.warn('Migration fehlgeschlagen:', e);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  HEATMAP INDEX
+// ══════════════════════════════════════════════
+
+// Bearing (Richtung) zwischen zwei Punkten in Grad (0-360)
+function calcBearing(lat1, lng1, lat2, lng2) {
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const lat1r = lat1 * Math.PI / 180, lat2r = lat2 * Math.PI / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2r);
+  const x = Math.cos(lat1r)*Math.sin(lat2r) - Math.sin(lat1r)*Math.cos(lat2r)*Math.cos(dLng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function addBearingToRun(run) {
+  const pts = run.points;
+  for (let i = 0; i < pts.length; i++) {
+    if (i < pts.length - 1) {
+      pts[i].bearing = calcBearing(pts[i].lat, pts[i].lng, pts[i+1].lat, pts[i+1].lng);
+    } else {
+      pts[i].bearing = pts[i-1]?.bearing || 0;
+    }
+  }
+}
+
+// Ausgedünnte Heatmap-Einträge: ein Punkt alle ~HEATMAP_STEP Meter
+function buildHeatmapEntries(run) {
+  const entries = [];
+  let cumDist = 0;
+  let lastAdded = 0;
+  const pts = run.points;
+  for (let i = 1; i < pts.length; i++) {
+    cumDist += haversine(pts[i-1].lat, pts[i-1].lng, pts[i].lat, pts[i].lng) * 1000;
+    if (cumDist - lastAdded >= HEATMAP_STEP) {
+      entries.push({
+        trackId: run.id,
+        type: run.type || 'other',
+        lat: pts[i].lat,
+        lng: pts[i].lng,
+        bearing: pts[i].bearing || 0,
+        speed: pts[i].speed || 0,
+        cellKey: cellKey(pts[i].lat, pts[i].lng)
+      });
+      lastAdded = cumDist;
+    }
+  }
+  return entries;
+}
+
+function cellKey(lat, lng) {
+  return `${Math.round(lat/CELL_DEG)}_${Math.round(lng/CELL_DEG)}`;
+}
+
+// Räumlichen Index im RAM aufbauen
+function buildSpatialIndex(heatmapEntries) {
+  spatialIndex = {};
+  for (const e of heatmapEntries) {
+    if (!spatialIndex[e.cellKey]) spatialIndex[e.cellKey] = [];
+    spatialIndex[e.cellKey].push(e);
+  }
+}
+
+// Nachbarzellen für einen Punkt (3×3 Raster)
+function neighborCells(lat, lng) {
+  const cr = Math.round(lat/CELL_DEG);
+  const cc = Math.round(lng/CELL_DEG);
+  const cells = [];
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++)
+      cells.push(`${cr+dr}_${cc+dc}`);
+  return cells;
+}
+
+// Geschwindigkeitsvergleich für aktuellen Punkt
+function matchSpeed(lat, lng, bearing, currentSpeed) {
+  const cells = neighborCells(lat, lng);
+  const matches = [];
+  for (const ck of cells) {
+    const entries = spatialIndex[ck] || [];
+    for (const e of entries) {
+      // Distanz prüfen
+      const d = haversine(lat, lng, e.lat, e.lng) * 1000;
+      if (d > MATCH_RADIUS) continue;
+      // Winkel prüfen
+      const angleDiff = Math.abs(((bearing - e.bearing + 540) % 360) - 180);
+      if (angleDiff > MATCH_ANGLE) continue;
+      // Nur gleiche Aktivität
+      if (e.type !== activityType) continue;
+      matches.push(e.speed);
+    }
+  }
+  if (matches.length < 2) return null;
+  const mean = matches.reduce((a,b)=>a+b,0) / matches.length;
+  const max  = Math.max(...matches);
+  const pct  = mean > 0 ? ((currentSpeed - mean) / mean * 100) : 0;
+  return { mean, max, pct, n: matches.length };
+}
+
+// ══════════════════════════════════════════════
+//  HEATMAP TOGGLE + FARBIGE SPUR
+// ══════════════════════════════════════════════
+function toggleHeatmap() {
+  heatmapActive = !heatmapActive;
+  document.getElementById('btnHeatmap').className = 'map-ctrl-btn' + (heatmapActive ? ' active-btn' : '');
+
+  if (!heatmapActive) {
+    // Alle Heatmap-Layer entfernen
+    heatmapLayers.forEach(l => { if(tMap) tMap.removeLayer(l); });
+    heatmapLayers = [];
+    document.getElementById('compareLabel').classList.remove('show');
+    // Grüne Standard-Spur wiederherstellen
+    if (tCurrentLine) tCurrentLine.setStyle({color:'#00e5a0', opacity:0.9});
+    if (currentRun) tCurrentLine.setLatLngs(currentRun.points.map(p=>[p.lat,p.lng]));
+    return;
+  }
+
+  // Heatmap zeichnen: alle Tracks als dünne graue Linien
+  if (!idb) { toast('Datenbank nicht bereit'); return; }
+  idbLoadHeatmap().then(entries => {
+    // nach trackId gruppieren
+    const byTrack = {};
+    for (const e of entries) {
+      if (activityType !== 'all' && e.type !== activityType) continue;
+      if (!byTrack[e.trackId]) byTrack[e.trackId] = [];
+      byTrack[e.trackId].push(e);
+    }
+    for (const [trackId, pts] of Object.entries(byTrack)) {
+      if (pts.length < 2) continue;
+      const latlngs = pts.map(p=>[p.lat,p.lng]);
+      const layer = L.polyline(latlngs, {color:'rgba(255,255,255,0.15)', weight:2, interactive:false});
+      layer.addTo(tMap);
+      heatmapLayers.push(layer);
+    }
+    toast(`${Object.keys(byTrack).length} Tracks geladen`);
+  });
+}
+
+// Vergleichsfarbe: rot (-10%) → gelb → grün (0%) → cyan → blau (+10%)
+function compareColor(pct) {
+  // pct: -100 bis +100, wir klemmen auf ±20
+  const t = Math.max(-1, Math.min(1, pct / 20)); // -1 = 20% langsamer, +1 = 20% schneller
+  if (t < 0) {
+    // rot → grün
+    const f = 1 + t; // 0..1
+    const r = Math.round(239 + f * (0 - 239));
+    const g = Math.round(68  + f * (229 - 68));
+    const b = Math.round(68  + f * (160 - 68));
+    return `rgb(${r},${g},${b})`;
+  } else {
+    // grün → blau
+    const f = t; // 0..1
+    const r = Math.round(0   + f * (59  - 0));
+    const g = Math.round(229 + f * (130 - 229));
+    const b = Math.round(160 + f * (246 - 160));
+    return `rgb(${r},${g},${b})`;
+  }
+}
+
+// Farbige Spur aus Segmenten neu zeichnen
+function updateCompareSpur(points) {
+  if (!heatmapActive || !tMap) return;
+
+  // Alte farbige Segmente entfernen
+  compareSegments.forEach(l => tMap.removeLayer(l));
+  compareSegments = [];
+
+  // Standard-Spur unsichtbar machen
+  if (tCurrentLine) tCurrentLine.setStyle({opacity:0});
+
+  // Segmente: je 5 Punkte zu einem Segment zusammenfassen
+  const SEG = 5;
+  for (let i = 0; i < points.length - 1; i += SEG) {
+    const chunk = points.slice(i, Math.min(i + SEG + 1, points.length));
+    if (chunk.length < 2) continue;
+    const mid = chunk[Math.floor(chunk.length/2)];
+    const match = mid.bearing != null
+      ? matchSpeed(mid.lat, mid.lng, mid.bearing, mid.speed||0)
+      : null;
+    const color = match ? compareColor(match.pct) : '#00e5a0';
+    const layer = L.polyline(chunk.map(p=>[p.lat,p.lng]), {color, weight:5, opacity:0.9, interactive:false});
+    layer.addTo(tMap);
+    compareSegments.push(layer);
+  }
+
+  // Label updaten
+  if (lastCompareMatch) {
+    const sign = lastCompareMatch.pct >= 0 ? '+' : '';
+    document.getElementById('compareLabel').textContent = `${sign}${lastCompareMatch.pct.toFixed(1)}%`;
+    document.getElementById('compareLabel').classList.add('show');
+  }
+}
+
 // ══════════════════════════════════════════════
 //  DRAFT – laufender Track wird nach jedem GPS-Punkt
 //  in localStorage gesichert. Bei App-Neustart (RAM-Kill
@@ -1824,7 +2186,26 @@ function deactivateScreenLock() {
   if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
 }
 
-window.addEventListener('load',()=>{ initTrackerMap(); checkAndRestoreDraft(); });
+window.addEventListener('load', async () => {
+  initTrackerMap();
+  checkAndRestoreDraft();
+  try {
+    await initIDB();
+    await migrateToIDB();
+    // Alle Runs aus IDB laden (ersetzt localStorage als primäre Quelle)
+    const idbRuns = await idbLoadAllRuns();
+    if (idbRuns.length > 0) {
+      runs = idbRuns.sort((a,b) => b.startTs - a.startTs);
+    }
+    // Heatmap-Index in RAM laden
+    const heatmapEntries = await idbLoadHeatmap();
+    buildSpatialIndex(heatmapEntries);
+    console.log(`[IDB] ${runs.length} Tracks, ${heatmapEntries.length} Heatmap-Punkte geladen`);
+  } catch(e) {
+    console.warn('[IDB] Fehler:', e);
+    toast('Datenbank-Fehler – localStorage als Fallback');
+  }
+});
 </script>
 </body>
 </html>
