@@ -114,7 +114,7 @@ body.offline #offlineBadge { display:block; }
 .big-row { display:flex; align-items:baseline; gap:10px; padding:0 2px; border-bottom:1px solid rgba(255,255,255,0.05); }
 .big-row:last-child { border-bottom:none; }
 .big-row-unit { font-family:var(--mono); font-size:clamp(28px,9.5vw,56px); font-weight:500; color:var(--muted); width:clamp(48px,13vw,72px); flex-shrink:0; }
-.big-row-val  { font-family:var(--mono); font-size:clamp(56px,19vw,112px); font-weight:700; line-height:0.95; flex:1; }
+.big-row-val  { font-family:var(--mono); font-size:clamp(56px,19vw,112px); font-weight:700; line-height:0.95; flex:1; text-align:right; }
 .big-row-val.c-accent { color:var(--accent); }
 .big-row-val.c-blue   { color:var(--blue); }
 .big-row-val.c-white  { color:var(--text); }
@@ -164,7 +164,7 @@ body.offline #offlineBadge { display:block; }
   font-family:var(--mono);
   font-size:clamp(72px,22vw,128px);
   font-weight:700; line-height:0.92;
-  flex:1;
+  flex:1; text-align:right;
 }
 .full-row-val.c-accent { color:var(--accent); }
 .full-row-val.c-blue   { color:var(--blue); }
@@ -686,6 +686,8 @@ swipeEl.addEventListener('touchend', () => {
 //  CONSTANTS & STATE
 // ══════════════════════════════════════════════
 const STORAGE_KEY   = 'lauftracker_runs_v4';
+const DRAFT_KEY     = 'lauftracker_draft_v1';
+const DRAFT_MAX_PTS = 3600; // max Punkte im Draft (1 Pkt/sek = 1h)
 const ACTIVITY_TYPES = ['run','bike','other'];
 const ACTIVITY_ICONS = {run:'🏃', bike:'🚴', other:'✕'};
 
@@ -1060,7 +1062,7 @@ function updateToggleBtn() {
   }
 }
 function resetRun() {
-  stopRun(); currentRun=null; elapsed=0; running=false;
+  stopRun(); currentRun=null; elapsed=0; running=false; clearDraft();
   const zeros={timer:'00:00:00',timer2:'00:00:00',timerFull:'00:00:00',
     statDist:'0.00',statPace:'–:––',statSpeed:'0.0',statAvgSpeed:'0.0',statAlt:'0',statAltRate:'0',
     bigDist:'0.00',bigPace:'–:––',bigSpeed:'0.0',bigAvgSpeed:'0.0',bigAlt:'0',bigAltRate:'0',
@@ -1197,13 +1199,22 @@ function onGPS(pos) {
   const pace20      = avgSpeed20>0.1?3600/avgSpeed20:0;
   const hmh         = Math.round(avgAltRate/10)*10; // auf 10m runden, negative Werte erlaubt
 
-  // Steigung aus geglätteter Höhe (letzte 20s) für Watt-Berechnung
+  // Steigung (Option C): 20s-gemittelte Höhe jetzt vs. vor 20s
+  // Beide Enden des Fensters sind Mittelwerte → robust gegen GPS-Höhenrauschen
   let gradient = 0;
-  const withAlt20 = currentRun.points.filter(p=>p.alt!=null&&p.ts>=(ts-20000));
-  if (withAlt20.length >= 2) {
-    const dAlt  = withAlt20[withAlt20.length-1].alt - withAlt20[0].alt;
-    const dDist = haversine(withAlt20[0].lat,withAlt20[0].lng,withAlt20[withAlt20.length-1].lat,withAlt20[withAlt20.length-1].lng)*1000;
-    gradient = dDist > 5 ? (dAlt / dDist) * 100 : 0;
+  const withAlt = currentRun.points.filter(p=>p.alt!=null);
+  if (withAlt.length >= 4) {
+    const now20   = withAlt.filter(p=>p.ts>=(ts-10000)); // letzte 10s → "jetzt"
+    const before20= withAlt.filter(p=>p.ts>=(ts-20000)&&p.ts<(ts-10000)); // 10-20s zurück → "vorher"
+    if (now20.length >= 2 && before20.length >= 2) {
+      const altNow  = now20.reduce((s,p)=>s+p.alt,0)/now20.length;
+      const altPrev = before20.reduce((s,p)=>s+p.alt,0)/before20.length;
+      // Horizontale Distanz über die letzten 20s
+      const pts20 = withAlt.filter(p=>p.ts>=(ts-20000));
+      let dDist = 0;
+      for (let i=1;i<pts20.length;i++) dDist+=haversine(pts20[i-1].lat,pts20[i-1].lng,pts20[i].lat,pts20[i].lng)*1000;
+      gradient = dDist > 10 ? ((altNow-altPrev)/dDist)*100 : 0;
+    }
   }
   const watt = calcWatt(avgSpeed20, gradient);
   const isBike = activityType === 'bike';
@@ -1231,6 +1242,7 @@ function onGPS(pos) {
 
   drawLiveChart(currentRun.points);
   updateRefMarker(currentRun.dist);
+  saveDraft();
 }
 
 function onGPSErr(e) {
@@ -1412,7 +1424,7 @@ function drawDetailChart(points,canvas,ctx,refPoints) {
 function saveRun() {
   if(!currentRun||currentRun.points.length<2) return;
   const run={id:currentRun.id,startTs:currentRun.startTs,duration:elapsed,dist:currentRun.dist,elevGain:currentRun.elevGain,points:currentRun.points,splits:currentRun.splits,source:'recorded'};
-  runs.unshift(run);saveRuns();exportGPX(run);exportJSON(run);
+  runs.unshift(run);saveRuns();exportGPX(run);exportJSON(run);clearDraft();
   toast('Lauf gespeichert & GPX/JSON heruntergeladen');
   document.getElementById('btnSave').disabled=true;
 }
@@ -1555,6 +1567,100 @@ function renderDetailView(run){
 // ══════════════════════════════════════════════
 //  STORAGE
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  DRAFT – laufender Track wird nach jedem GPS-Punkt
+//  in localStorage gesichert. Bei App-Neustart (RAM-Kill
+//  durch Android) wird der Track automatisch wiederhergestellt.
+// ══════════════════════════════════════════════
+function saveDraft() {
+  if (!currentRun || !running) return;
+  try {
+    // Punkte auf DRAFT_MAX_PTS begrenzen: jeden n-ten Punkt behalten
+    const pts = currentRun.points;
+    const step = pts.length > DRAFT_MAX_PTS ? Math.ceil(pts.length / DRAFT_MAX_PTS) : 1;
+    const reduced = pts.filter((_,i) => i % step === 0);
+    const draft = {
+      ...currentRun,
+      points: reduced,
+      elapsedAtSave: elapsed + (Date.now() - startTime),
+      savedAt: Date.now(),
+      activityType
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch(e) { console.warn('Draft save failed:', e); }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch(e) {}
+}
+
+function checkAndRestoreDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    if (!draft || !draft.points || draft.points.length < 2) { clearDraft(); return; }
+
+    // Draft älter als 24h? Ignorieren.
+    if (Date.now() - draft.savedAt > 24*60*60*1000) { clearDraft(); return; }
+
+    const ageSec = Math.round((Date.now() - draft.savedAt) / 1000);
+    const ageStr = ageSec < 60 ? ageSec+'s' : Math.round(ageSec/60)+'min';
+    const dist   = draft.dist ? draft.dist.toFixed(2) : '?';
+    const dur    = fmtTime(draft.elapsedAtSave / 1000);
+
+    // Toast mit Wiederherstellungs-Angebot
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;';
+    overlay.innerHTML = `
+      <div style="font-size:22px">⚠️ Unterbrochener Track</div>
+      <div style="font-size:14px;color:var(--muted);text-align:center;line-height:1.6">
+        Vor ${ageStr} wurde ein laufender Track unterbrochen.<br>
+        <strong style="color:var(--text)">${dist} km · ${dur}</strong>
+      </div>
+      <button id="draftRestoreBtn" style="width:100%;padding:16px;border-radius:14px;background:linear-gradient(135deg,#00e5a0,#00b87a);color:#001a0d;font-size:15px;font-weight:700;border:none;cursor:pointer;">
+        Track wiederherstellen
+      </button>
+      <button id="draftDiscardBtn" style="width:100%;padding:14px;border-radius:14px;background:var(--card);color:var(--muted);font-size:14px;font-weight:600;border:1px solid var(--border);cursor:pointer;">
+        Verwerfen
+      </button>`;
+    document.body.appendChild(overlay);
+
+    document.getElementById('draftRestoreBtn').onclick = () => {
+      // Track wiederherstellen
+      activityType = draft.activityType || 'run';
+      updateActivityUI();
+      currentRun = {
+        id: draft.id,
+        startTs: draft.startTs,
+        points: draft.points,
+        dist: draft.dist || 0,
+        elevGain: draft.elevGain || 0,
+        splits: draft.splits || [],
+        lastSplitKm: draft.lastSplitKm || 0,
+        lastPos: draft.points[draft.points.length-1],
+        lastAlt: draft.points[draft.points.length-1].alt || null
+      };
+      // Zeit: gespeicherte elapsed-Zeit übernehmen
+      elapsed = draft.elapsedAtSave;
+      startTime = Date.now();
+      // UI wiederherstellen
+      updateTimerUI();
+      initTrackerMap();
+      if (tCurrentLine) tCurrentLine.setLatLngs(currentRun.points.map(p=>[p.lat,p.lng]));
+      if (tCurrentLine2) tCurrentLine2.setLatLngs(currentRun.points.map(p=>[p.lat,p.lng]));
+      document.body.removeChild(overlay);
+      // GPS neu starten
+      startRun();
+      toast('Track wiederhergestellt ✓');
+    };
+    document.getElementById('draftDiscardBtn').onclick = () => {
+      clearDraft();
+      document.body.removeChild(overlay);
+    };
+  } catch(e) { console.warn('Draft restore failed:', e); clearDraft(); }
+}
+
 function loadRuns(){
   try {
     // Migration: alte v3-Daten übernehmen falls v4 noch leer
@@ -1718,7 +1824,7 @@ function deactivateScreenLock() {
   if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
 }
 
-window.addEventListener('load',()=>{ initTrackerMap(); });
+window.addEventListener('load',()=>{ initTrackerMap(); checkAndRestoreDraft(); });
 </script>
 </body>
 </html>
