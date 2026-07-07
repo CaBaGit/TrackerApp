@@ -1197,8 +1197,11 @@ function onGPS(pos) {
   const d=haversine(last.lat,last.lng,lat,lng);
   if(d<0.003) return;
 
-  if(rawSpeed<0.5&&d>0){const dt=(ts-last.ts)/1000;rawSpeed=dt>0?Math.min((d/dt)*3600,40):0;}
-  rawSpeed=Math.min(rawSpeed,40);
+  // Plausibilitätsgrenze gegen GPS-Ausreißer, je nach Aktivität unterschiedlich
+  // (Laufen: realistisch max ~25km/h, Rad: Abfahrten können 70+ km/h erreichen)
+  const speedCap = activityType === 'bike' ? 90 : (activityType === 'run' ? 30 : 90);
+  if(rawSpeed<0.5&&d>0){const dt=(ts-last.ts)/1000;rawSpeed=dt>0?Math.min((d/dt)*3600,speedCap):0;}
+  rawSpeed=Math.min(rawSpeed,speedCap);
 
   // Höhengewinn
   let altRateVal=0;
@@ -1640,8 +1643,8 @@ function initIDB() {
         ts.createIndex('type', 'type', {unique:false});
       }
       if (!db.objectStoreNames.contains('heatmap')) {
-        db.createObjectStore('heatmap', {keyPath:'id', autoIncrement:true});
-        db.transaction.objectStore('heatmap').createIndex('trackId','trackId',{unique:false});
+        const hs = db.createObjectStore('heatmap', {keyPath:'id', autoIncrement:true});
+        hs.createIndex('trackId','trackId',{unique:false});
       }
     };
     req.onsuccess = e => { idb = e.target.result; resolve(idb); };
