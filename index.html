@@ -737,6 +737,7 @@ let heatmapActive  = false;
 let spatialIndex   = {};      // {cellKey: [{lat,lng,bearing,speed,type},...]}
 let heatmapLayers  = [];      // Leaflet-Layer für Heatmap-Linien
 let compareSegments = [];     // aktuelle Spur-Segmente (farbig)
+let compareSegDoneIdx = 0;    // bis zu diesem Punkt-Index wurden Segmente bereits gezeichnet
 let lastCompareMatch = null;  // letztes Match {mean, max, pct}
 let idb = null;               // IndexedDB-Instanz
 let currentRun = null;
@@ -1091,6 +1092,7 @@ function updateToggleBtn() {
 }
 function resetRun() {
   stopRun(); currentRun=null; elapsed=0; running=false; clearDraft();
+  resetCompareSpur();
   const zeros={timer:'00:00:00',timer2:'00:00:00',timerFull:'00:00:00',
     statDist:'0.00',statPace:'–:––',statSpeed:'0.0',statAvgSpeed:'0.0',statAlt:'0',statAltRate:'0',
     bigDist:'0.00',bigPace:'–:––',bigSpeed:'0.0',bigAvgSpeed:'0.0',bigAlt:'0',bigAltRate:'0',
@@ -1224,13 +1226,10 @@ function onGPS(pos) {
   currentRun.points.push({lat,lng,ts,speed:rawSpeed,alt:altitude,altRate:altRateVal,bearing});
   currentRun.lastPos={lat,lng,ts};
 
-  // Geschwindigkeitsvergleich (nur wenn Heatmap aktiv)
-  if (heatmapActive && Object.keys(spatialIndex).length > 0) {
-    const match = matchSpeed(lat, lng, bearing, avgSpeed20);
-    if (match) {
-      lastCompareMatch = match;
-      updateCompareSpur(currentRun.points);
-    }
+  // Geschwindigkeitsvergleich (nur wenn Heatmap aktiv) – Matching passiert
+  // intern in updateCompareSpur() pro neuem Segment, nicht hier direkt
+  if (heatmapActive) {
+    updateCompareSpur(currentRun.points);
   }
 
   const km=Math.floor(currentRun.dist);
@@ -1849,12 +1848,16 @@ function toggleHeatmap() {
     // Alle Heatmap-Layer entfernen
     heatmapLayers.forEach(l => { if(tMap) tMap.removeLayer(l); });
     heatmapLayers = [];
+    resetCompareSpur();
     document.getElementById('compareLabel').classList.remove('show');
     // Grüne Standard-Spur wiederherstellen
     if (tCurrentLine) tCurrentLine.setStyle({color:'#00e5a0', opacity:0.9});
     if (currentRun) tCurrentLine.setLatLngs(currentRun.points.map(p=>[p.lat,p.lng]));
     return;
   }
+
+  // Frisch starten: alte Segmente weg, Index von vorne aufbauen
+  resetCompareSpur();
 
   // Heatmap zeichnen: alle Tracks als dünne graue Linien
   if (!idb) { toast('Datenbank nicht bereit'); return; }
@@ -1874,6 +1877,12 @@ function toggleHeatmap() {
       heatmapLayers.push(layer);
     }
     toast(`${Object.keys(byTrack).length} Tracks geladen`);
+
+    // Bereits vorhandenen aktuellen Track sofort rückwirkend einfärben
+    // (nicht nur neue Punkte während laufender Aufzeichnung)
+    if (currentRun && currentRun.points.length > 1) {
+      updateCompareSpur(currentRun.points);
+    }
   });
 }
 
@@ -1898,22 +1907,22 @@ function compareColor(pct) {
   }
 }
 
-// Farbige Spur aus Segmenten neu zeichnen
+// Farbige Spur inkrementell zeichnen: nur NEUE Segmente werden hinzugefügt,
+// bereits gezeichnete Segmente bleiben unangetastet. Das verhindert, dass die
+// App bei langen Läufen immer langsamer wird (vorher: kompletter Neuaufbau
+// bei jedem GPS-Punkt → O(n²) über die Laufzeit, führte zum Einfrieren).
 function updateCompareSpur(points) {
   if (!heatmapActive || !tMap) return;
 
-  // Alte farbige Segmente entfernen
-  compareSegments.forEach(l => tMap.removeLayer(l));
-  compareSegments = [];
-
-  // Standard-Spur unsichtbar machen
+  // Standard-Spur unsichtbar machen (einmalig, kein Performance-Problem bei Wiederholung)
   if (tCurrentLine) tCurrentLine.setStyle({opacity:0});
 
-  // Segmente: je 5 Punkte zu einem Segment zusammenfassen
   const SEG = 5;
-  for (let i = 0; i < points.length - 1; i += SEG) {
+  // Weiterzeichnen ab dem letzten fertig gezeichneten Segment
+  let i = compareSegDoneIdx;
+  for (; i < points.length - 1; i += SEG) {
     const chunk = points.slice(i, Math.min(i + SEG + 1, points.length));
-    if (chunk.length < 2) continue;
+    if (chunk.length < 2) break; // noch nicht genug neue Punkte für ein volles Segment
     const mid = chunk[Math.floor(chunk.length/2)];
     const match = mid.bearing != null
       ? matchSpeed(mid.lat, mid.lng, mid.bearing, mid.speed||0)
@@ -1922,6 +1931,8 @@ function updateCompareSpur(points) {
     const layer = L.polyline(chunk.map(p=>[p.lat,p.lng]), {color, weight:5, opacity:0.9, interactive:false});
     layer.addTo(tMap);
     compareSegments.push(layer);
+    if (match) lastCompareMatch = match;
+    compareSegDoneIdx = i + SEG;
   }
 
   // Label updaten
@@ -1930,6 +1941,13 @@ function updateCompareSpur(points) {
     document.getElementById('compareLabel').textContent = `${sign}${lastCompareMatch.pct.toFixed(1)}%`;
     document.getElementById('compareLabel').classList.add('show');
   }
+}
+
+// Setzt die inkrementelle Spur komplett zurück (z.B. bei Heatmap ein/aus)
+function resetCompareSpur() {
+  compareSegments.forEach(l => { if (tMap) tMap.removeLayer(l); });
+  compareSegments = [];
+  compareSegDoneIdx = 0;
 }
 
 // ══════════════════════════════════════════════
