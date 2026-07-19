@@ -726,6 +726,7 @@ function calcWatt(speedKmh, gradientPct) {
 }
 const SPEED_AVG_SEC = 20;
 const ALT_AVG_SEC   = 60;   // 1 Minute Glättungsfenster für Höhe
+const GPS_GAP_SEC   = 8;    // GPS-Lücke ab dieser Dauer: Fenster wird zurückgesetzt
 const ALT_MIN_DELTA = 2;
 
 let runs = loadRuns();
@@ -770,10 +771,24 @@ function fmtDate(ts){ return new Date(ts).toLocaleString('de-DE',{day:'2-digit',
 function toast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2500); }
 function speedColor(kmh,mn,mx){ const t=mx>mn?Math.max(0,Math.min(1,(kmh-mn)/(mx-mn))):0.5; const s=[[239,68,68],[249,115,22],[234,179,8],[0,229,160]]; const seg=t*(s.length-1),i=Math.min(Math.floor(seg),s.length-2),f=seg-i; return `rgb(${Math.round(s[i][0]+f*(s[i+1][0]-s[i][0]))},${Math.round(s[i][1]+f*(s[i+1][1]-s[i][1]))},${Math.round(s[i][2]+f*(s[i+1][2]-s[i][2]))})`; }
 
+// Schneidet eine chronologisch sortierte Punktliste auf den Teil NACH der
+// letzten GPS-Lücke (> GPS_GAP_SEC) zurecht. Verhindert, dass gleitende
+// Fenster (Speed, Höhe, Steigung) über eine Signalunterbrechung hinweg
+// rechnen und dadurch unsinnige Ausreißer erzeugen (z.B. HM/h nach Tunnel).
+function trimAfterLastGap(points) {
+  for (let i = points.length - 1; i > 0; i--) {
+    if (points[i].ts - points[i-1].ts > GPS_GAP_SEC * 1000) {
+      return points.slice(i);
+    }
+  }
+  return points;
+}
+
 function rollingAvg(points, field, windowSec) {
   if (!points.length) return 0;
   const cutoff = points[points.length-1].ts - windowSec*1000;
-  const w = points.filter(p=>p.ts>=cutoff);
+  let w = points.filter(p=>p.ts>=cutoff);
+  w = trimAfterLastGap(w); // Lücke im Fenster? Nur Daten danach verwenden
   return w.length ? w.reduce((s,p)=>s+(p[field]||0),0)/w.length : 0;
 }
 
@@ -782,7 +797,8 @@ function rollingAvg(points, field, windowSec) {
 // Rauschen als eine Mittelung einzelner Punkt-zu-Punkt-Raten, weil alle
 // Punkte im Fenster gleichberechtigt einfließen statt nur die Fenstergrenzen.
 function altRateFromWindow(points, windowSec) {
-  const withAlt = points.filter(p => p.alt != null);
+  let withAlt = points.filter(p => p.alt != null);
+  withAlt = trimAfterLastGap(withAlt); // Lücke? Nur Daten seit der letzten Lücke nutzen
   if (withAlt.length < 2) return 0;
   const now = withAlt[withAlt.length-1].ts;
 
@@ -1243,12 +1259,17 @@ function onGPS(pos) {
   const pace20      = avgSpeed20>0.1?3600/avgSpeed20:0;
   const hmh         = Math.round(avgAltRate/10)*10; // auf 10m runden, negative Werte erlaubt
 
-  // Steigung (Option C): Höhenänderung UND Distanz über denselben 20s-Zeitraum,
-  // sonst passt der Nenner nicht zum Zähler (führte zu halbierter Steigung/Watt).
-  // Glättung nur an den Rändern (je 3 Punkte), nicht durch Fenster-Halbierung.
+  // Steigung für Watt: gleiches 60s-Fenster wie bei HM/h (statt 20s) —
+  // reduziert Rauschen deutlich (Analyse zeigte ~3x weniger Sprünge zwischen
+  // Updates), da Watt bei Steigungen sehr nichtlinear auf Gradient-Fehler
+  // reagiert. Höhenänderung UND Distanz über denselben Zeitraum, sonst passt
+  // der Nenner nicht zum Zähler. Lücken-Trimming verhindert Ausreißer nach
+  // GPS-Aussetzern.
+  const WATT_GRADIENT_SEC = 60;
   let gradient = 0;
-  const withAlt = currentRun.points.filter(p=>p.alt!=null);
-  const pts20 = withAlt.filter(p=>p.ts>=(ts-20000));
+  let withAlt = currentRun.points.filter(p=>p.alt!=null);
+  withAlt = trimAfterLastGap(withAlt);
+  const pts20 = withAlt.filter(p=>p.ts>=(ts-WATT_GRADIENT_SEC*1000));
   if (pts20.length >= 4) {
     const nEdge = Math.min(3, Math.floor(pts20.length/2));
     const altStart = pts20.slice(0, nEdge).reduce((s,p)=>s+p.alt,0)/nEdge;
@@ -1346,12 +1367,16 @@ function drawLiveChart(points) {
   if (points.length < 2) return;
   const W = W0 - YAXIS_W;
 
-  const speeds = points.map(p=>p.speed||0);
   const MAX_CHART_POINTS = 60;
   const step = Math.max(1, Math.floor(points.length/MAX_CHART_POINTS));
   const sampledIdx = [];
   for (let i=0; i<points.length; i+=step) sampledIdx.push(i);
   if (sampledIdx[sampledIdx.length-1] !== points.length-1) sampledIdx.push(points.length-1);
+
+  // Geglättete Werte pro Stützpunkt berechnen — gleiche Fenster wie die
+  // große Zahl-Anzeige (20s Speed, 60s HM/h), damit Chart und Anzeige
+  // konsistent aussehen statt der Chart unnötig verrauscht wirkt.
+  const speedsSampled  = sampledIdx.map(i => rollingAvg(points.slice(0,i+1), 'speed', SPEED_AVG_SEC));
   const altRatesSampled = sampledIdx.map(i => altRateFromWindow(points.slice(0,i+1), ALT_AVG_SEC));
   const hasAlt = altRatesSampled.some(v=>Math.abs(v)>5);
 
@@ -1365,7 +1390,7 @@ function drawLiveChart(points) {
     minA = 0; maxA = 1500; aGridLines = [500, 1000];
   } else {
     // dynamisch
-    maxS = Math.max(...speeds, 1);
+    maxS = Math.max(...speedsSampled, 1);
     sGridLines = [Math.round(maxS*0.25), Math.round(maxS*0.5), Math.round(maxS*0.75)];
     const absMax = Math.max(...altRatesSampled.map(v=>Math.abs(v)), 10);
     minA = -absMax; maxA = absMax;
@@ -1425,13 +1450,13 @@ function drawLiveChart(points) {
   const grad = speedCtx.createLinearGradient(0,0,0,H);
   grad.addColorStop(0,'rgba(0,229,160,0.25)'); grad.addColorStop(1,'rgba(0,229,160,0)');
   speedCtx.beginPath();
-  speeds.forEach((s,i)=>{const x=xOf(i,speeds.length); i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});
-  speedCtx.lineTo(xOf(speeds.length-1,speeds.length),H); speedCtx.lineTo(YAXIS_W,H);
+  sampledIdx.forEach((idx,i)=>{const x=xOf(idx,points.length); i===0?speedCtx.moveTo(x,yS(speedsSampled[i])):speedCtx.lineTo(x,yS(speedsSampled[i]));});
+  speedCtx.lineTo(xOf(sampledIdx[sampledIdx.length-1],points.length),H); speedCtx.lineTo(YAXIS_W,H);
   speedCtx.closePath(); speedCtx.fillStyle=grad; speedCtx.fill();
 
   // ── Speed line ──
   speedCtx.beginPath(); speedCtx.setLineDash([]); speedCtx.strokeStyle='#00e5a0'; speedCtx.lineWidth=2; speedCtx.lineJoin='round';
-  speeds.forEach((s,i)=>{const x=xOf(i,speeds.length); i===0?speedCtx.moveTo(x,yS(s)):speedCtx.lineTo(x,yS(s));});
+  sampledIdx.forEach((idx,i)=>{const x=xOf(idx,points.length); i===0?speedCtx.moveTo(x,yS(speedsSampled[i])):speedCtx.lineTo(x,yS(speedsSampled[i]));});
   speedCtx.stroke();
 
   // ── HM/h line ──
