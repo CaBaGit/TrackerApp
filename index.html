@@ -231,6 +231,24 @@ body.offline #offlineBadge { display:block; }
 .speed-gradient-bar { height:6px; border-radius:3px; background:linear-gradient(90deg,#ef4444,#f97316,#eab308,#00e5a0); margin:4px 0; }
 .speed-gradient-labels { display:flex; justify-content:space-between; font-size:9px; color:var(--muted); }
 
+/* ── INFO PAGE ── */
+#page-info { background:var(--bg); padding:16px; overflow-y:auto; }
+.info-weight-box { background:var(--card); border:1px solid var(--border); border-radius:var(--r); padding:14px 16px; margin-bottom:20px; }
+.info-weight-box label { display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+.info-weight-input-row { display:flex; align-items:center; gap:10px; }
+.info-weight-input-row input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:10px; color:var(--text); font-family:var(--mono); font-size:22px; font-weight:700; padding:10px 12px; outline:none; -moz-appearance:textfield; }
+.info-weight-input-row input::-webkit-outer-spin-button, .info-weight-input-row input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+.info-weight-input-row .unit { font-family:var(--mono); font-size:16px; color:var(--muted); font-weight:600; }
+.info-weight-hint { font-size:11px; color:var(--muted); margin-top:8px; line-height:1.5; }
+.info-guide h3 { font-size:14px; font-weight:700; color:var(--accent); margin:18px 0 6px; display:flex; align-items:center; gap:8px; }
+.info-guide h3 .num { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#001a0d; font-size:12px; font-weight:800; flex-shrink:0; }
+.info-guide p { font-size:13px; color:var(--text); line-height:1.6; margin-bottom:6px; }
+.info-guide .step-icon { font-size:16px; }
+.info-guide ul { margin:4px 0 10px 20px; }
+.info-guide li { font-size:13px; color:var(--text); line-height:1.6; margin-bottom:3px; }
+.info-guide code { background:var(--card); border:1px solid var(--border); border-radius:5px; padding:1px 6px; font-family:var(--mono); font-size:12px; color:var(--accent); }
+.info-title { font-size:20px; font-weight:700; margin-bottom:16px; }
+
 /* ── ACTIVITY FILTER TABS ── */
 .activity-filter-row { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
 .act-filter-btn { padding:6px 12px; border-radius:20px; font-size:11px; font-weight:600; border:1px solid var(--border); background:var(--card); color:var(--muted); cursor:pointer; }
@@ -535,6 +553,63 @@ body.offline #offlineBadge { display:block; }
   </div>
 </div>
 
+<!-- ════════════════ INFO ════════════════ -->
+<div class="page" id="page-info">
+  <div class="info-title">Einstellungen & Anleitung</div>
+
+  <div class="info-weight-box">
+    <label for="weightInput">Gesamtgewicht (Fahrer + Rad + Ausrüstung)</label>
+    <div class="info-weight-input-row">
+      <input type="number" id="weightInput" min="30" max="200" step="1" value="90" inputmode="numeric" onchange="saveWeight()" oninput="saveWeight()">
+      <span class="unit">kg</span>
+    </div>
+    <div class="info-weight-hint">Wird für die Watt-Berechnung im Radmodus verwendet. Bei Laufen/Sonstige irrelevant.</div>
+  </div>
+
+  <div class="info-guide">
+    <h3><span class="num">1</span> Zum Startbildschirm hinzufügen</h3>
+    <p>Damit GPS zuverlässig funktioniert und die App wie eine echte App aussieht:</p>
+    <ul>
+      <li><strong>Chrome (Android):</strong> Menü (⋮) → „Zum Startbildschirm hinzufügen" bzw. „App installieren"</li>
+      <li><strong>Safari (iPhone):</strong> Teilen-Symbol (□↑) → „Zum Home-Bildschirm"</li>
+    </ul>
+    <p>Danach die App immer über das neue Icon öffnen, nicht über den Browser-Tab.</p>
+
+    <h3><span class="num">2</span> GPS-Berechtigung erteilen</h3>
+    <p>Beim ersten Start fragt die App nach dem Standort — auf „Zulassen" tippen.</p>
+    <p>Falls versehentlich abgelehnt: In den Android-Einstellungen unter <code>Apps → Lauf Tracker → Berechtigungen → Standort</code> auf „Zulassen" stellen. Ist die App nur als Browser-Tab offen, stattdessen auf das Schloss-Symbol links in der Adresszeile tippen → Berechtigungen → Standort.</p>
+
+    <h3><span class="num">3</span> Bildschirm fixieren (gegen versehentliches Schließen)</h3>
+    <p>Verhindert, dass die App beim Laufen/Fahren aus Versehen in den Hintergrund gerät und GPS pausiert:</p>
+    <ul>
+      <li>Einmalig aktivieren: <code>Einstellungen → Sicherheit → Bildschirmfixierung</code> (bzw. über die Suche in den Einstellungen)</li>
+      <li>Nutzen: App öffnen → App-Übersicht (Wischen und Halten) → auf das App-Icon oben tippen → „Fixieren"</li>
+      <li>Lösen: Zurück + Übersicht gleichzeitig gedrückt halten (bzw. nach oben wischen und halten)</li>
+    </ul>
+
+    <h3><span class="num">4</span> Bildschirm sperren (🔒) & entsperren</h3>
+    <p>Der 🔒-Button (unten neben Start) schaltet ein schwarzes Overlay ein — spart Akku (OLED) und verhindert Fehleingaben. Timer und GPS laufen weiter.</p>
+    <p><strong>Entsperren:</strong> Mit einem Finger ein „L" auf den Bildschirm zeichnen — erst nach unten, dann nach rechts.</p>
+
+    <h3><span class="num">5</span> Referenztrack folgen (👻)</h3>
+    <p>Eine frühere Strecke als „Geist" mitlaufen lassen:</p>
+    <ul>
+      <li>Im Tab <strong>Aktivität</strong> bei einem Track auf „☆ Ref" tippen → wird als Referenz gesetzt</li>
+      <li>Auf der Karte den 👻-Button aktivieren → die Referenzstrecke wird rot eingeblendet</li>
+      <li>Ein roter Punkt zeigt, wo du bei gleicher Distanz auf der alten Strecke wärst</li>
+    </ul>
+
+    <h3><span class="num">6</span> Geschwindigkeitsvergleich (🔥)</h3>
+    <p>Vergleicht deine aktuelle Geschwindigkeit mit allen früheren Fahrten/Läufen der gleichen Aktivität:</p>
+    <ul>
+      <li>Den 🔥-Button auf der Karte aktivieren</li>
+      <li>Alte Strecken erscheinen als lila Linien</li>
+      <li>Deine aktuelle Spur färbt sich: <span style="color:#ef4444">rot</span> = &gt;5% langsamer, <span style="color:#eab308">gelb</span> = leicht langsamer, <span style="color:#00e5a0">grün</span> = leicht schneller, <span style="color:#3b82f6">blau</span> = &gt;5% schneller</li>
+      <li>Das Label oben zeigt die aktuelle Abweichung in Prozent</li>
+    </ul>
+  </div>
+</div>
+
 <!-- NAV -->
 <div id="nav">
   <button class="nav-btn active" id="nav-tracker" onclick="showPage('tracker')">
@@ -548,6 +623,10 @@ body.offline #offlineBadge { display:block; }
   <button class="nav-btn" id="nav-history" onclick="showPage('history')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
     Aktivität
+  </button>
+  <button class="nav-btn" id="nav-info" onclick="showPage('info')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>
+    Info
   </button>
 </div>
 
@@ -609,6 +688,47 @@ function updateOnlineStatus() {
 window.addEventListener('online', updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
 updateOnlineStatus();
+
+// ══════════════════════════════════════════════
+//  GEWICHT (für Watt-Berechnung)
+// ══════════════════════════════════════════════
+function loadWeight() {
+  try {
+    const w = parseFloat(localStorage.getItem(WEIGHT_KEY));
+    if (w && w >= 30 && w <= 200) {
+      W_MASS = w;
+      const inp = document.getElementById('weightInput');
+      if (inp) inp.value = w;
+    }
+  } catch(e) {}
+}
+function saveWeight() {
+  const inp = document.getElementById('weightInput');
+  if (!inp) return;
+  const w = parseFloat(inp.value);
+  if (w && w >= 30 && w <= 200) {
+    W_MASS = w;
+    try { localStorage.setItem(WEIGHT_KEY, String(w)); } catch(e) {}
+  }
+}
+
+// ══════════════════════════════════════════════
+//  INFO-TAB SICHTBARKEIT
+//  Verschwindet sobald ein Track existiert (currentRun),
+//  kommt nach Reset/Speichern zurück. Verhindert versehentliches
+//  Öffnen während des Trackings.
+// ══════════════════════════════════════════════
+function updateInfoTabVisibility() {
+  const btn = document.getElementById('nav-info');
+  if (!btn) return;
+  // Verstecken solange ein aktiver, noch nicht gespeicherter Track existiert
+  const hide = currentRun !== null && !savedAfterRun;
+  btn.style.display = hide ? 'none' : '';
+  // Falls Info-Tab gerade offen war und wir starten → zurück zum Tracker
+  if (hide && document.getElementById('page-info').classList.contains('active')) {
+    showPage('tracker');
+  }
+}
 
 // ══════════════════════════════════════════════
 //  ACTIVITY TYPE
@@ -713,7 +833,9 @@ const ACTIVITY_ICONS = {run:'🏃', bike:'🚴', other:'✕'};
 
 // Watt-Berechnung (Rennrad): Konczer-Formel
 // m=90kg, CdA=0.32m², Crr=0.004, rho=1.225kg/m³, g=9.81m/s²
-const W_MASS = 90, W_CDA = 0.32, W_CRR = 0.004, W_RHO = 1.225, W_G = 9.81;
+let W_MASS = 90; // Gesamtgewicht, per Info-Seite einstellbar
+const W_CDA = 0.32, W_CRR = 0.004, W_RHO = 1.225, W_G = 9.81;
+const WEIGHT_KEY = 'lauftracker_weight';
 function calcWatt(speedKmh, gradientPct) {
   if (speedKmh < 0.5) return 0;
   const v = speedKmh / 3.6;
@@ -739,6 +861,7 @@ let spatialIndex   = {};      // {cellKey: [{lat,lng,bearing,speed,type},...]}
 let heatmapLayers  = [];      // Leaflet-Layer für Heatmap-Linien
 let compareSegments = [];     // aktuelle Spur-Segmente (farbig)
 let compareSegDoneIdx = 0;    // bis zu diesem Punkt-Index wurden Segmente bereits gezeichnet
+let savedAfterRun = false;    // true nach saveRun → Info-Tab wieder sichtbar
 let lastCompareMatch = null;  // letztes Match {mean, max, pct}
 let idb = null;               // IndexedDB-Instanz
 let currentRun = null;
@@ -872,6 +995,7 @@ function showPage(name) {
   if (name==='history') renderHistory();
   if (name==='compare') setTimeout(()=>{ if(cMap) cMap.invalidateSize(); },100);
   if (name==='plan')    { initPlanMap(); setTimeout(()=>{ if(pMap) pMap.invalidateSize(); },200); }
+  if (name==='info')    { /* statische Seite, nichts zu initialisieren */ }
 }
 
 // ══════════════════════════════════════════════
@@ -1067,6 +1191,7 @@ function startPlannedRoute() {
 //  TRACKING
 // ══════════════════════════════════════════════
 function initCurrentRun() {
+  savedAfterRun=false;
   currentRun={ id:Date.now(), startTs:Date.now(), points:[], dist:0, elevGain:0, splits:[], lastSplitKm:0, lastPos:null, lastAlt:null };
 }
 
@@ -1078,6 +1203,7 @@ function toggleRun() {
 function startRun() {
   if (!navigator.geolocation) { toast('GPS nicht verfügbar'); return; }
   if (!currentRun) initCurrentRun();
+  updateInfoTabVisibility();
   running=true; startTime=Date.now(); elapsed=elapsed||0;
   updateToggleBtn();
   document.getElementById('btnSave').disabled=true;
@@ -1109,6 +1235,7 @@ function updateToggleBtn() {
 function resetRun() {
   stopRun(); currentRun=null; elapsed=0; running=false; clearDraft();
   resetCompareSpur();
+  updateInfoTabVisibility();
   const zeros={timer:'00:00:00',timer2:'00:00:00',timerFull:'00:00:00',
     statDist:'0.00',statPace:'–:––',statSpeed:'0.0',statAvgSpeed:'0.0',statAlt:'0',statAltRate:'0',
     bigDist:'0.00',bigPace:'–:––',bigSpeed:'0.0',bigAvgSpeed:'0.0',bigAlt:'0',bigAltRate:'0',
@@ -1511,6 +1638,7 @@ function saveRun() {
   runs.unshift(run); saveRuns(); exportGPX(run); exportJSON(run); clearDraft();
   toast('Lauf gespeichert & GPX/JSON heruntergeladen');
   document.getElementById('btnSave').disabled=true;
+  savedAfterRun=true; updateInfoTabVisibility();
 }
 function exportGPX(run) {
   const pts=run.points.map(p=>`    <trkpt lat="${p.lat.toFixed(7)}" lon="${p.lng.toFixed(7)}">${p.alt!=null?`\n      <ele>${p.alt.toFixed(1)}</ele>`:''}\n      <time>${new Date(p.ts).toISOString()}</time>\n    </trkpt>`).join('\n');
@@ -2222,6 +2350,8 @@ function deactivateScreenLock() {
 
 window.addEventListener('load', async () => {
   initTrackerMap();
+  loadWeight();
+  updateInfoTabVisibility();
   checkAndRestoreDraft();
   try {
     await initIDB();
