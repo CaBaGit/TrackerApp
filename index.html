@@ -836,19 +836,27 @@ const ACTIVITY_ICONS = {run:'🏃', bike:'🚴', other:'✕'};
 let W_MASS = 90; // Gesamtgewicht, per Info-Seite einstellbar
 const W_CDA = 0.32, W_CRR = 0.004, W_RHO = 1.225, W_G = 9.81;
 const WEIGHT_KEY = 'lauftracker_weight';
-function calcWatt(speedKmh, gradientPct) {
+// Leistung aus Geschwindigkeit + Vertikalgeschwindigkeit.
+// Bewusst NICHT über die Steigung: P_steig = m·g·v_vert ist eine einzelne
+// direkt messbare Größe. Die frühere Formel multiplizierte Steigung (60s-Mittel)
+// mit Geschwindigkeit (20s-Mittel) — ein Produkt zweier unterschiedlich
+// geglätteter Werte, was an Steigungswechseln (Kuppe, Anstiegsbeginn) zu
+// verzerrten Werten führte. Jetzt hängt jeder Term nur von einer Variablen ab.
+// Nebeneffekt: Watt ist direkt an die HM/h-Anzeige gekoppelt
+// (z.B. 1000 hm/h → m·g·1000/3600 = 245 W Kletterleistung bei 90 kg).
+function calcWatt(speedKmh, vVertMs) {
   if (speedKmh < 0.5) return 0;
   const v = speedKmh / 3.6;
-  const k = gradientPct / 100;
   const pAir   = 0.5 * W_CDA * W_RHO * Math.pow(v, 3);
   const pRoll  = W_MASS * W_G * W_CRR * v;
-  const vSteig = (k * v) / Math.sqrt(1 + k * k);
-  const pSteig = W_MASS * W_G * vSteig;
+  const pSteig = W_MASS * W_G * (vVertMs || 0);
   return Math.max(0, Math.round(pAir + pRoll + pSteig));
 }
 const SPEED_AVG_SEC = 20;
 const ALT_AVG_SEC   = 60;   // 1 Minute Glättungsfenster für Höhe
 const GPS_GAP_SEC   = 8;    // GPS-Lücke ab dieser Dauer: Fenster wird zurückgesetzt
+const WATT_INST_SEC   = 20; // Fenster für die Momentanleistung (Speed UND Höhe gemeinsam)
+const WATT_SMOOTH_SEC = 30; // Glättung der fertigen Leistung
 const ALT_MIN_DELTA = 2;
 
 let runs = loadRuns();
@@ -919,6 +927,27 @@ function rollingAvg(points, field, windowSec) {
 // Höhenschnitt vor windowSec, geteilt durch windowSec. Robuster gegen GPS-
 // Rauschen als eine Mittelung einzelner Punkt-zu-Punkt-Raten, weil alle
 // Punkte im Fenster gleichberechtigt einfließen statt nur die Fenstergrenzen.
+// Vertikalgeschwindigkeit in m/s über genau ein Zeitfenster (Randglättung
+// über je 3 Punkte gegen GPS-Höhenrauschen). Anders als altRateFromWindow,
+// das zwei aufeinanderfolgende Fenster vergleicht und dadurch ~2×windowSec
+// Historie überspannt, misst diese Funktion nur den angefragten Zeitraum —
+// nötig, damit die Momentanleistung aus einem konsistenten Zeitraum stammt.
+function vertSpeedMs(points, windowSec) {
+  let wa = points.filter(p => p.alt != null);
+  wa = trimAfterLastGap(wa);
+  if (wa.length < 4) return 0;
+  const ts = wa[wa.length-1].ts;
+  const W = wa.filter(p => p.ts >= ts - windowSec*1000);
+  if (W.length < 4) return 0;
+  const n = Math.min(3, Math.floor(W.length/2));
+  const a0 = W.slice(0,n).reduce((s,p)=>s+p.alt,0)/n;
+  const a1 = W.slice(-n).reduce((s,p)=>s+p.alt,0)/n;
+  const t0 = W.slice(0,n).reduce((s,p)=>s+p.ts,0)/n;
+  const t1 = W.slice(-n).reduce((s,p)=>s+p.ts,0)/n;
+  const dt = (t1-t0)/1000;
+  return dt > 2 ? (a1-a0)/dt : 0;
+}
+
 function altRateFromWindow(points, windowSec) {
   let withAlt = points.filter(p => p.alt != null);
   withAlt = trimAfterLastGap(withAlt); // Lücke? Nur Daten seit der letzten Lücke nutzen
@@ -1386,26 +1415,20 @@ function onGPS(pos) {
   const pace20      = avgSpeed20>0.1?3600/avgSpeed20:0;
   const hmh         = Math.round(avgAltRate/10)*10; // auf 10m runden, negative Werte erlaubt
 
-  // Steigung für Watt: gleiches 60s-Fenster wie bei HM/h (statt 20s) —
-  // reduziert Rauschen deutlich (Analyse zeigte ~3x weniger Sprünge zwischen
-  // Updates), da Watt bei Steigungen sehr nichtlinear auf Gradient-Fehler
-  // reagiert. Höhenänderung UND Distanz über denselben Zeitraum, sonst passt
-  // der Nenner nicht zum Zähler. Lücken-Trimming verhindert Ausreißer nach
-  // GPS-Aussetzern.
-  const WATT_GRADIENT_SEC = 60;
-  let gradient = 0;
-  let withAlt = currentRun.points.filter(p=>p.alt!=null);
-  withAlt = trimAfterLastGap(withAlt);
-  const pts20 = withAlt.filter(p=>p.ts>=(ts-WATT_GRADIENT_SEC*1000));
-  if (pts20.length >= 4) {
-    const nEdge = Math.min(3, Math.floor(pts20.length/2));
-    const altStart = pts20.slice(0, nEdge).reduce((s,p)=>s+p.alt,0)/nEdge;
-    const altEnd   = pts20.slice(-nEdge).reduce((s,p)=>s+p.alt,0)/nEdge;
-    let dDist = 0;
-    for (let i=1;i<pts20.length;i++) dDist+=haversine(pts20[i-1].lat,pts20[i-1].lng,pts20[i].lat,pts20[i].lng)*1000;
-    gradient = dDist > 10 ? ((altEnd-altStart)/dDist)*100 : 0;
-  }
-  const watt = calcWatt(avgSpeed20, gradient);
+  // Watt aus Geschwindigkeit (20s) und Vertikalgeschwindigkeit (60s, identisch
+  // zur HM/h-Anzeige). Kein Steigungs-Produkt mehr → keine Verzerrung durch
+  // gemischte Zeitskalen, und Watt bleibt konsistent mit der HM/h-Zahl.
+  // Watt: erst Momentanleistung aus EINEM gemeinsamen Zeitfenster (Speed und
+  // Vertikalgeschwindigkeit), bei 0 abgeschnitten (man kann nicht negativ
+  // treten — bergab rollt man), dann diese Leistung glätten.
+  // Würde man stattdessen Terme aus verschiedenen Fenstern addieren, entstünde
+  // an Kuppen ein Phantom: der Kletterterm stammt noch aus dem Anstieg, der
+  // Luftwiderstandsterm schon aus der Abfahrt — Zustände, die nie gleichzeitig
+  // existierten. Messung an dieser Stelle ergab bis zu 886 W Verzerrung.
+  const instSpeed = rollingAvg(currentRun.points, 'speed', WATT_INST_SEC);
+  const instVVert = vertSpeedMs(currentRun.points, WATT_INST_SEC);
+  currentRun.points[currentRun.points.length-1].wattInst = calcWatt(instSpeed, instVVert);
+  const watt = Math.round(rollingAvg(currentRun.points, 'wattInst', WATT_SMOOTH_SEC));
   const isBike = activityType === 'bike';
   const paceOrWatt      = isBike ? watt      : fmtPace(pace20);
   const paceOrWattStr   = String(paceOrWatt);
@@ -1929,7 +1952,10 @@ function buildHeatmapEntries(run) {
         lat: pts[i].lat,
         lng: pts[i].lng,
         bearing: pts[i].bearing || 0,
-        speed: pts[i].speed || 0,
+        // Geglätteter Wert (20s) statt Rohwert: rohe Momentangeschwindigkeit
+        // schwankt ~1.15 km/h zwischen Messungen, geglättet nur ~0.23 km/h.
+        // Sonst vergleicht die Heatmap Rauschen gegen Rauschen.
+        speed: rollingAvg(pts.slice(0, i+1), 'speed', SPEED_AVG_SEC),
         cellKey: cellKey(pts[i].lat, pts[i].lng)
       });
       lastAdded = cumDist;
@@ -2064,9 +2090,13 @@ function updateCompareSpur(points) {
   for (; i < points.length - 1; i += SEG) {
     const chunk = points.slice(i, Math.min(i + SEG + 1, points.length));
     if (chunk.length < 2) break; // noch nicht genug neue Punkte für ein volles Segment
-    const mid = chunk[Math.floor(chunk.length/2)];
+    const midOffset = Math.floor(chunk.length/2);
+    const mid = chunk[midOffset];
+    // Geglättete Geschwindigkeit am Segment-Mittelpunkt, damit der Vergleich
+    // nicht Rauschen gegen Rauschen hält (Index speichert ebenfalls geglättet)
+    const midSpeed = rollingAvg(points.slice(0, i + midOffset + 1), 'speed', SPEED_AVG_SEC);
     const match = mid.bearing != null
-      ? matchSpeed(mid.lat, mid.lng, mid.bearing, mid.speed||0)
+      ? matchSpeed(mid.lat, mid.lng, mid.bearing, midSpeed)
       : null;
     const color = match ? compareColor(match.pct) : '#00e5a0';
     const layer = L.polyline(chunk.map(p=>[p.lat,p.lng]), {color, weight:5, opacity:0.9, interactive:false});
