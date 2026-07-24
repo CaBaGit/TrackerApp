@@ -215,13 +215,13 @@ body.offline #offlineBadge { display:block; }
 .compare-bottom { padding:12px 14px; overflow-y:auto; flex:1; }
 
 /* Dual-Range-Slider */
-.slider-wrap { position:relative; height:44px; margin:6px 0 12px; }
-.slider-track { position:absolute; top:50%; left:0; right:0; height:4px; background:var(--border); border-radius:2px; transform:translateY(-50%); }
+.slider-wrap { position:relative; height:48px; margin:6px 0 12px; padding:0 16px; box-sizing:border-box; touch-action:none; }
+.slider-track { position:absolute; top:50%; left:16px; right:16px; height:4px; background:var(--border); border-radius:2px; transform:translateY(-50%); }
 .slider-fill  { position:absolute; top:50%; height:4px; background:var(--accent); border-radius:2px; transform:translateY(-50%); pointer-events:none; }
-.range-input  { position:absolute; width:100%; -webkit-appearance:none; appearance:none; height:4px; background:none; outline:none; top:50%; transform:translateY(-50%); pointer-events:none; }
-.range-input::-webkit-slider-thumb { -webkit-appearance:none; width:22px; height:22px; border-radius:50%; background:var(--accent); border:3px solid var(--bg); box-shadow:0 2px 6px rgba(0,0,0,0.4); pointer-events:all; cursor:pointer; }
-.range-input::-moz-range-thumb { width:22px; height:22px; border-radius:50%; background:var(--accent); border:3px solid var(--bg); box-shadow:0 2px 6px rgba(0,0,0,0.4); pointer-events:all; cursor:pointer; }
-.slider-labels { display:flex; justify-content:space-between; font-family:var(--mono); font-size:11px; color:var(--accent); margin-top:2px; }
+.range-input  { position:absolute; left:16px; width:calc(100% - 32px); -webkit-appearance:none; appearance:none; height:4px; background:none; outline:none; top:50%; transform:translateY(-50%); pointer-events:none; touch-action:none; }
+.range-input::-webkit-slider-thumb { -webkit-appearance:none; width:28px; height:28px; border-radius:50%; background:var(--accent); border:3px solid var(--bg); box-shadow:0 2px 8px rgba(0,0,0,0.5); pointer-events:all; cursor:pointer; touch-action:none; }
+.range-input::-moz-range-thumb { width:28px; height:28px; border-radius:50%; background:var(--accent); border:3px solid var(--bg); box-shadow:0 2px 8px rgba(0,0,0,0.5); pointer-events:all; cursor:pointer; }
+.slider-labels { display:flex; justify-content:space-between; font-family:var(--mono); font-size:11px; color:var(--accent); margin-top:2px; padding:0 16px; }
 
 /* Segment-Chart (Speed oben + Höhe unten) */
 .seg-chart-wrap { background:var(--card); border-radius:var(--r); border:1px solid var(--border); padding:10px 12px; margin-bottom:12px; }
@@ -1909,8 +1909,9 @@ function initDetailView(run) {
 
 function updateSliderFill(s, e, total) {
   const fill = document.getElementById('sliderFill');
-  fill.style.left  = (s/total*100)+'%';
-  fill.style.width = ((e-s)/total*100)+'%';
+  // Padding von 16px links/rechts abziehen, da die track-Breite = 100% - 32px
+  fill.style.left  = `calc(16px + ${s/total*100}% - ${s/total*32}px)`;
+  fill.style.width = `calc(${(e-s)/total*100}% - ${(e-s)/total*32}px)`;
   document.getElementById('sliderStartLbl').textContent = s.toFixed(2)+' km';
   document.getElementById('sliderEndLbl').textContent   = e.toFixed(2)+' km';
 }
