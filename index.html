@@ -209,7 +209,8 @@ body.offline #offlineBadge { display:block; }
 .empty-state p { font-size:14px; }
 
 /* ── COMPARE / DETAIL ── */
-#page-compare { background:var(--bg); display:flex; flex-direction:column; overflow:hidden; }
+#page-compare { background:var(--bg); flex-direction:column; overflow:hidden; }
+#page-compare.active { display:flex; }
 #compare-map { height:220px; flex-shrink:0; }
 .compare-bottom { padding:12px 14px; overflow-y:auto; flex:1; }
 
@@ -1851,11 +1852,18 @@ function openDetail(id) {
 let detailRun = null;       // aktuell angezeigte Aktivität
 let detailSegStart = 0;     // Index erstes Segment-Punkt
 let detailSegEnd = 0;       // Index letzter Segment-Punkt
+let detailCumDist = [];     // gecachte kumulierte Distanzen (einmal berechnet)
 
 function initDetailView(run) {
   detailRun = run;
   const pts = run.points;
   const totalDist = run.dist;
+
+  // Kumulierte Distanzen einmal berechnen und cachen
+  detailCumDist = [0];
+  for (let i=1; i<pts.length; i++) {
+    detailCumDist.push(detailCumDist[i-1] + haversine(pts[i-1].lat,pts[i-1].lng,pts[i].lat,pts[i].lng));
+  }
 
   document.getElementById('compareTitle').textContent = run.name || fmtDate(run.startTs);
   document.getElementById('compareTotalInfo').textContent =
@@ -1907,15 +1915,18 @@ function updateSliderFill(s, e, total) {
   document.getElementById('sliderEndLbl').textContent   = e.toFixed(2)+' km';
 }
 
-// Liefert Punkte zwischen distStart und distEnd km
+// Liefert Punkte zwischen distStart und distEnd km (binäre Suche, O(log n))
 function getSegmentPoints(pts, distStart, distEnd) {
-  const result = [];
-  let cum = 0;
-  for (let i=0; i<pts.length; i++) {
-    if (i>0) cum += haversine(pts[i-1].lat,pts[i-1].lng,pts[i].lat,pts[i].lng);
-    if (cum >= distStart - 0.001 && cum <= distEnd + 0.001) result.push({...pts[i], cumDist:cum});
-  }
-  return result;
+  if (!detailCumDist.length) return pts;
+  // Binäre Suche nach Start-Index
+  let lo=0, hi=detailCumDist.length-1;
+  while (lo<hi) { const mid=(lo+hi)>>1; if(detailCumDist[mid]<distStart-0.001) lo=mid+1; else hi=mid; }
+  const iStart = Math.max(0, lo-1);
+  // Binäre Suche nach End-Index
+  lo=iStart; hi=detailCumDist.length-1;
+  while (lo<hi) { const mid=(lo+hi+1)>>1; if(detailCumDist[mid]<=distEnd+0.001) lo=mid; else hi=mid-1; }
+  const iEnd = Math.min(pts.length-1, lo+1);
+  return pts.slice(iStart, iEnd+1).map((p,i) => ({...p, cumDist: detailCumDist[iStart+i]}));
 }
 
 function updateSegmentAnalysis(distStart, distEnd) {
