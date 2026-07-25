@@ -2305,8 +2305,12 @@ async function idbLoadHeatmap() {
 // ── Migration localStorage → IndexedDB ──
 async function migrateToIDB() {
   try {
-    const existing = await idbLoadAllRuns();
-    if (existing.length > 0) return; // bereits migriert
+    const existingRuns = await idbLoadAllRuns();
+    // Nicht mehr "IDB hat überhaupt was → nichts zu tun". Das würde jeden
+    // Track übersehen, der nur in localStorage liegt (z.B. via GPX/JSON
+    // importiert unter der alten Import-Logik, die nie nach IDB schrieb).
+    // Stattdessen pro Track prüfen, ob seine ID schon in IDB ist.
+    const existingIds = new Set(existingRuns.map(r => r.id));
 
     // Lade aus localStorage
     const v4 = localStorage.getItem(STORAGE_KEY);
@@ -2318,14 +2322,14 @@ async function migrateToIDB() {
     if (!oldRuns.length) return;
 
     // Bearing + type hinzufügen, dann in IDB speichern.
-    // Einträge ohne Punkte (das neue schlanke Cache-Format) überspringen wir
-    // hier bewusst — die sind kein Migrationsmaterial, sondern schon das
-    // Ergebnis der neuen saveRuns()-Logik. Gäbe es hier IDB-seitig nichts,
-    // wären die Volldaten ohnehin nicht mehr rekonstruierbar (localStorage
-    // war nie eine Vollkopie, die das auffangen sollte).
+    // Übersprungen werden: (a) Einträge ohne Punkte (das schlanke
+    // Cache-Format — kein Migrationsmaterial, s.u.) und (b) Tracks, die
+    // schon in IDB sind (normal aufgezeichnete Läufe landen dort immer
+    // schon direkt beim Speichern, die müssen wir nicht anfassen).
     let migrated = 0;
     for (const run of oldRuns) {
       if (!run.points || run.points.length < 2) continue;
+      if (existingIds.has(run.id)) continue;
       if (!run.type) run.type = 'other';
       addBearingToRun(run);
       await idbSaveRun(run);
