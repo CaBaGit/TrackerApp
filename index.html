@@ -923,6 +923,13 @@ const WATT_INST_SEC   = 20; // Fenster für die Momentanleistung (Speed UND Höh
 const WATT_SMOOTH_SEC = 30; // Glättung der fertigen Leistung
 const ALT_MIN_DELTA = 2;
 
+// Aktivitätsabhängige Plausibilitätsgrenze gegen GPS-Ausreißer — an einer
+// Stelle definiert, damit Live-Tracking (onGPS) und GPX-Import (importGPX)
+// garantiert denselben Wert verwenden statt zwei unabhängig gepflegten Zahlen.
+function speedCapFor(type) {
+  return type === 'bike' ? 90 : (type === 'run' ? 30 : 90);
+}
+
 let runs = loadRuns();
 let activityType = 'run';
 let historyFilter = 'all';
@@ -1009,7 +1016,12 @@ function vertSpeedMs(points, windowSec) {
   const t0 = W.slice(0,n).reduce((s,p)=>s+p.ts,0)/n;
   const t1 = W.slice(-n).reduce((s,p)=>s+p.ts,0)/n;
   const dt = (t1-t0)/1000;
-  return dt > 2 ? (a1-a0)/dt : 0;
+  if (dt <= 2) return 0;
+  const vv = (a1-a0)/dt;
+  // Plausibilitäts-Clamp: GPS-Höhenspikes können vvert auf >2 m/s treiben
+  // (=7200 m/h), was physikalisch unmöglich ist. Max realistisch: ~0.7 m/s
+  // (~2500 m/h, entspricht extremem Klettern). Alles darüber ist Messfehler.
+  return Math.max(-0.7, Math.min(0.7, vv));
 }
 
 function altRateFromWindow(points, windowSec) {
@@ -1437,7 +1449,7 @@ function onGPS(pos) {
 
   // Plausibilitätsgrenze gegen GPS-Ausreißer, je nach Aktivität unterschiedlich
   // (Laufen: realistisch max ~25km/h, Rad: Abfahrten können 70+ km/h erreichen)
-  const speedCap = activityType === 'bike' ? 90 : (activityType === 'run' ? 30 : 90);
+  const speedCap = speedCapFor(activityType);
   if(rawSpeed<0.5&&d>0){const dt=(ts-last.ts)/1000;rawSpeed=dt>0?Math.min((d/dt)*3600,speedCap):0;}
   rawSpeed=Math.min(rawSpeed,speedCap);
 
@@ -1701,6 +1713,25 @@ function drawDetailChart(points,canvas,ctx,refPoints) {
 // ══════════════════════════════════════════════
 //  SAVE / EXPORT / IMPORT
 // ══════════════════════════════════════════════
+// Persistiert einen vollständigen Run (inkl. aller Punkte) in IndexedDB und
+// baut die zugehörigen Heatmap-Einträge auf. Gemeinsamer Pfad für live
+// aufgezeichnete UND importierte (GPX/JSON) Tracks — vorher lief nur
+// saveRun() darüber, wodurch importierte Tracks im Referenzvergleich und in
+// der Geschwindigkeits-Heatmap (🔥) unsichtbar blieben, weil weder ein
+// IDB-Eintrag noch Heatmap-Punkte für sie existierten.
+function persistRunToIDB(run) {
+  if (!run.points || run.points.length < 2) return Promise.resolve();
+  return idbSaveRun(run).then(() => {
+    const entries = buildHeatmapEntries(run);
+    return idbSaveHeatmapEntries(entries).then(() => {
+      for (const e of entries) {
+        if (!spatialIndex[e.cellKey]) spatialIndex[e.cellKey] = [];
+        spatialIndex[e.cellKey].push(e);
+      }
+    });
+  }).catch(e => console.warn('IDB save error:', e));
+}
+
 function saveRun() {
   if(!currentRun||currentRun.points.length<2) return;
   const run={id:currentRun.id,startTs:currentRun.startTs,duration:elapsed,dist:currentRun.dist,
@@ -1709,18 +1740,7 @@ function saveRun() {
 
   // Bearing zu jedem Punkt hinzufügen
   addBearingToRun(run);
-
-  // In IDB speichern
-  idbSaveRun(run).then(() => {
-    const entries = buildHeatmapEntries(run);
-    return idbSaveHeatmapEntries(entries).then(() => {
-      // Spatial-Index im RAM updaten
-      for (const e of entries) {
-        if (!spatialIndex[e.cellKey]) spatialIndex[e.cellKey] = [];
-        spatialIndex[e.cellKey].push(e);
-      }
-    });
-  }).catch(e => console.warn('IDB save error:', e));
+  persistRunToIDB(run);
 
   runs.unshift(run); saveRuns(); exportGPX(run); exportJSON(run); clearDraft();
   toast('Lauf gespeichert & GPX/JSON heruntergeladen');
@@ -1737,7 +1757,20 @@ function download(filename,content,type){const a=Object.assign(document.createEl
 function importJSON(event) {
   const file=event.target.files[0];if(!file)return;
   const r=new FileReader();
-  r.onload=e=>{try{const run=JSON.parse(e.target.result);if(!run.points||!run.startTs)throw new Error('Ungültiges Format');run.source=run.source||'json';if(!runs.find(x=>x.id===run.id)){runs.unshift(run);saveRuns();toast('Lauf importiert');renderHistory();}else toast('Lauf bereits vorhanden');}catch(err){toast('Fehler: '+err.message);}};
+  r.onload=e=>{
+    try{
+      const run=JSON.parse(e.target.result);
+      if(!run.points||!run.startTs)throw new Error('Ungültiges Format');
+      run.source=run.source||'json';
+      if(!run.type)run.type='other';
+      if(runs.find(x=>x.id===run.id)){ toast('Lauf bereits vorhanden'); return; }
+      // bearing (re)berechnen — kostet nichts, macht importierte Tracks
+      // heatmap-/referenztrack-tauglich, egal ob die Quelldatei es schon hatte
+      addBearingToRun(run);
+      persistRunToIDB(run);
+      runs.unshift(run);saveRuns();toast('Lauf importiert');renderHistory();
+    }catch(err){toast('Fehler: '+err.message);}
+  };
   r.readAsText(file);event.target.value='';
 }
 function importGPX(event) {
@@ -1748,6 +1781,8 @@ function importGPX(event) {
       const xml=new DOMParser().parseFromString(e.target.result,'text/xml');
       const trkpts=Array.from(xml.querySelectorAll('trkpt'));
       if(!trkpts.length)throw new Error('Keine Trackpunkte');
+      const importType='other'; // Aktivität ist beim GPX-Import unbekannt, wie bisher
+      const speedCap = speedCapFor(importType); // dieselbe Grenze wie im Live-Tracking statt eines eigenen Fixwerts
       let prevPt=null,cumDist=0,elevGain=0,lastSplitKm=0;
       const points=[],splits=[];
       trkpts.forEach(pt=>{
@@ -1755,11 +1790,14 @@ function importGPX(event) {
         const timeEl=pt.querySelector('time'),ts=timeEl?new Date(timeEl.textContent).getTime():Date.now();
         const eleEl=pt.querySelector('ele'),alt=eleEl?parseFloat(eleEl.textContent):null;
         let speed=0;
-        if(prevPt){const d=haversine(prevPt.lat,prevPt.lng,lat,lng),dt=(ts-prevPt.ts)/1000;speed=dt>0?Math.min((d/dt)*3600,40):0;cumDist+=d;if(alt!=null&&prevPt.alt!=null){const dA=alt-prevPt.alt;if(dA>=ALT_MIN_DELTA)elevGain+=dA;}const km=Math.floor(cumDist);if(km>lastSplitKm){const t0=trkpts[0].querySelector('time');splits.push({km,elapsed:(ts-(t0?new Date(t0.textContent).getTime():ts))/1000});lastSplitKm=km;}}
+        if(prevPt){const d=haversine(prevPt.lat,prevPt.lng,lat,lng),dt=(ts-prevPt.ts)/1000;speed=dt>0?Math.min((d/dt)*3600,speedCap):0;cumDist+=d;if(alt!=null&&prevPt.alt!=null){const dA=alt-prevPt.alt;if(dA>=ALT_MIN_DELTA)elevGain+=dA;}const km=Math.floor(cumDist);if(km>lastSplitKm){const t0=trkpts[0].querySelector('time');splits.push({km,elapsed:(ts-(t0?new Date(t0.textContent).getTime():ts))/1000});lastSplitKm=km;}}
         points.push({lat,lng,ts,speed,alt,altRate:0});prevPt={lat,lng,ts,alt};
       });
-      const run={id:points[0].ts,startTs:points[0].ts,duration:(points[points.length-1].ts-points[0].ts),dist:cumDist,elevGain,points,splits,source:'gpx',name:xml.querySelector('name')?.textContent||file.name,type:'other'};
-      if(!runs.find(x=>x.id===run.id)){runs.unshift(run);saveRuns();toast('GPX importiert: '+cumDist.toFixed(2)+' km');renderHistory();}else toast('Track bereits vorhanden');
+      const run={id:points[0].ts,startTs:points[0].ts,duration:(points[points.length-1].ts-points[0].ts),dist:cumDist,elevGain,points,splits,source:'gpx',name:xml.querySelector('name')?.textContent||file.name,type:importType};
+      if(runs.find(x=>x.id===run.id)){ toast('Track bereits vorhanden'); return; }
+      addBearingToRun(run);
+      persistRunToIDB(run);
+      runs.unshift(run);saveRuns();toast('GPX importiert: '+cumDist.toFixed(2)+' km');renderHistory();
     }catch(err){toast('GPX-Fehler: '+err.message);}
   };
   r.readAsText(file);event.target.value='';
@@ -1832,16 +1870,64 @@ function cycleRunType(id) {
   run.type = ACTIVITY_TYPES[idx];
   saveRuns(); renderHistory();
 }
-function setAsRef(id){activeRefRunId=activeRefRunId===id?null:id;refTrackVisible=!!activeRefRunId;if(tRefLine){if(activeRefRunId){const run=runs.find(r=>r.id===id);tRefLine.setLatLngs(run?run.points.map(p=>[p.lat,p.lng]):[]);}else{tRefLine.setLatLngs([]);if(tRefMarker&&tMap)tMap.removeLayer(tRefMarker);tRefMarker=null;}}document.getElementById('btnRefTrack').className='map-ctrl-btn'+(activeRefRunId?' active-btn':'');toast(activeRefRunId?'Referenztrack gesetzt':'Referenztrack entfernt');renderHistory();}
+async function setAsRef(id){
+  activeRefRunId = activeRefRunId===id ? null : id;
+  refTrackVisible = !!activeRefRunId;
+  if (tRefLine) {
+    if (activeRefRunId) {
+      let run = runs.find(r=>r.id===id);
+      // Gleiches Nachlade-Muster wie openDetail(): ohne Punkte im RAM
+      // gezielt aus IDB holen statt eine leere Referenzlinie zu zeichnen.
+      if (!run || !run.points || run.points.length < 2) {
+        const full = await idbLoadRun(id);
+        if (full) {
+          const idx = runs.findIndex(r=>r.id===id);
+          if (idx >= 0) runs[idx] = full; else runs.unshift(full);
+          run = full;
+        }
+      }
+      tRefLine.setLatLngs(run && run.points ? run.points.map(p=>[p.lat,p.lng]) : []);
+    } else {
+      tRefLine.setLatLngs([]);
+      if (tRefMarker && tMap) tMap.removeLayer(tRefMarker);
+      tRefMarker = null;
+    }
+  }
+  document.getElementById('btnRefTrack').className = 'map-ctrl-btn'+(activeRefRunId?' active-btn':'');
+  toast(activeRefRunId ? 'Referenztrack gesetzt' : 'Referenztrack entfernt');
+  renderHistory();
+}
 function deleteRun(id){if(!confirm('Lauf wirklich löschen?'))return;runs=runs.filter(r=>r.id!==id);saveRuns();idbDeleteRun(id).catch(e=>console.warn('IDB delete:',e));if(activeRefRunId===id){activeRefRunId=null;if(tRefLine)tRefLine.setLatLngs([]);}renderHistory();}
-function reexportRun(id){const run=runs.find(r=>r.id===id);if(run){exportGPX(run);toast('GPX exportiert');}}
+async function reexportRun(id){
+  let run=runs.find(r=>r.id===id);
+  if(!run){ toast('Track nicht gefunden'); return; }
+  if(!run.points||run.points.length<2){
+    const full=await idbLoadRun(id);
+    if(!full){ toast('Track-Daten nicht gefunden'); return; }
+    const idx=runs.findIndex(r=>r.id===id);
+    if(idx>=0) runs[idx]=full; else runs.unshift(full);
+    run=full;
+  }
+  exportGPX(run);toast('GPX exportiert');
+}
 
 // ══════════════════════════════════════════════
 //  DETAIL VIEW
 // ══════════════════════════════════════════════
-function openDetail(id) {
-  const run = runs.find(r=>r.id===id);
-  if (!run) return;
+async function openDetail(id) {
+  let run = runs.find(r=>r.id===id);
+  if (!run) { toast('Track nicht gefunden'); return; }
+  // `runs` kann zu diesem Zeitpunkt noch die schlanke localStorage-Version
+  // sein (kein `points`), z.B. wenn IDB beim App-Start noch nicht fertig
+  // geladen hatte. Dann gezielt die Volldaten nachladen und im RAM-Array
+  // ersetzen, damit spätere Zugriffe (Ref-Track, Re-Export) sofort passen.
+  if (!run.points || run.points.length < 2) {
+    const full = await idbLoadRun(id);
+    if (!full) { toast('Track-Daten nicht gefunden'); return; }
+    const idx = runs.findIndex(r=>r.id===id);
+    if (idx >= 0) runs[idx] = full; else runs.unshift(full);
+    run = full;
+  }
   showPage('compare');
   setTimeout(() => { initCompareMap(); initDetailView(run); }, 120);
 }
@@ -1983,7 +2069,7 @@ function updateSegmentAnalysis(distStart, distEnd) {
         const t0 = winA.slice(0,n).reduce((s,p)=>s+p.ts,0)/n;
         const t1 = winA.slice(-n).reduce((s,p)=>s+p.ts,0)/n;
         const dt = (t1-t0)/1000;
-        if (dt > 2) vvert = (a1-a0)/dt;
+        if (dt > 2) vvert = Math.max(-0.7, Math.min(0.7, (a1-a0)/dt));
       }
       const w = calcWatt(vAvg, vvert);
       if (w > 0) wattsInSeg.push(w);
@@ -2182,6 +2268,20 @@ async function idbLoadAllRuns() {
   });
 }
 
+// Einzelnen Track (inkl. aller Punkte) nachladen. Wird gebraucht, weil `runs`
+// im RAM nach dem Storage-Umbau nicht mehr garantiert Punkte enthält (z.B.
+// direkt nach dem Start, bevor IDB fertig geladen hat) — IDB ist die einzige
+// Quelle, die IMMER die vollen Daten hat.
+async function idbLoadRun(id) {
+  if (!idb) return null;
+  return new Promise((res,rej) => {
+    const tx  = idb.transaction('tracks','readonly');
+    const req = tx.objectStore('tracks').get(id);
+    req.onsuccess = () => res(req.result || null);
+    req.onerror   = () => rej(req.error);
+  });
+}
+
 async function idbSaveHeatmapEntries(entries) {
   if (!idb || !entries.length) return;
   return new Promise((res,rej) => {
@@ -2217,20 +2317,29 @@ async function migrateToIDB() {
     const oldRuns = JSON.parse(raw);
     if (!oldRuns.length) return;
 
-    // Bearing + type hinzufügen, dann in IDB speichern
+    // Bearing + type hinzufügen, dann in IDB speichern.
+    // Einträge ohne Punkte (das neue schlanke Cache-Format) überspringen wir
+    // hier bewusst — die sind kein Migrationsmaterial, sondern schon das
+    // Ergebnis der neuen saveRuns()-Logik. Gäbe es hier IDB-seitig nichts,
+    // wären die Volldaten ohnehin nicht mehr rekonstruierbar (localStorage
+    // war nie eine Vollkopie, die das auffangen sollte).
+    let migrated = 0;
     for (const run of oldRuns) {
+      if (!run.points || run.points.length < 2) continue;
       if (!run.type) run.type = 'other';
       addBearingToRun(run);
       await idbSaveRun(run);
       const entries = buildHeatmapEntries(run);
       await idbSaveHeatmapEntries(entries);
+      migrated++;
     }
+    if (!migrated) return;
 
     // Alte localStorage-Daten aufräumen
     localStorage.removeItem('lauftracker_runs_v3');
     // v4 bleibt als Fallback für loadRuns() bis wir es sicher entfernen können
 
-    toast(`${oldRuns.length} Aktivitäten migriert ✓`);
+    toast(`${migrated} Aktivitäten migriert ✓`);
   } catch(e) {
     console.warn('Migration fehlgeschlagen:', e);
   }
@@ -2538,24 +2647,61 @@ function checkAndRestoreDraft() {
   } catch(e) { console.warn('Draft restore failed:', e); clearDraft(); }
 }
 
+// ══════════════════════════════════════════════
+//  RUNS-INDEX (localStorage) vs. VOLLDATEN (IndexedDB)
+//  --------------------------------------------------
+//  IndexedDB ist die einzige Quelle, die je Track ALLE Punkte hält — dort
+//  ist auch beim Löschen/Umbenennen nichts verloren, unabhängig davon, wie
+//  groß die Trackhistorie wird (Quota koppelt an freien Gerätespeicher).
+//
+//  localStorage dient nur noch als synchroner Bootstrap-Cache für den
+//  Sekundenbruchteil zwischen Skriptstart und "IDB ist bereit" (IDB-Zugriff
+//  ist immer async). Er enthält deshalb bewusst nur schlanke Metadaten
+//  (kein `points`-Array) — die History-Karten brauchen nur Distanz, Dauer,
+//  Typ, Name etc., keine GPS-Punkte. Das hält den localStorage-Eintrag auf
+//  wenigen hundert Byte pro Aktivität, statt linear mit jedem aufgezeichneten
+//  GPS-Punkt zu wachsen (ein einzelner 90-Minuten-Track kann als Volldaten
+//  >1 MB sein — bei 15-20 Tracks wäre das gesamte localStorage-Kontingent
+//  einiger Browser erschöpft).
+//
+//  Sobald irgendwo im Code echte Punkte gebraucht werden (Detailansicht,
+//  Referenztrack) und `runs` sie gerade nicht im RAM hat, werden sie gezielt
+//  per idbLoadRun(id) nachgeladen — siehe openDetail() und setAsRef().
+// ══════════════════════════════════════════════
+const RUN_META_FIELDS = ['id','startTs','duration','dist','elevGain','type','name','source'];
+function toSlimRun(run) {
+  const slim = {};
+  RUN_META_FIELDS.forEach(k => { if (run[k] !== undefined) slim[k] = run[k]; });
+  return slim;
+}
+
 function loadRuns(){
   try {
-    // Migration: alte v3-Daten übernehmen falls v4 noch leer
+    // Migration: alte v3-Daten übernehmen falls v4 noch leer (Alt-Format
+    // enthielt noch volle Punktdaten — für den ersten Render reicht das,
+    // migrateToIDB() übernimmt sie gleich darauf sauber nach IDB)
     const v4 = localStorage.getItem(STORAGE_KEY);
     if (!v4 || JSON.parse(v4).length === 0) {
       const v3 = localStorage.getItem('lauftracker_runs_v3');
       if (v3) {
         const old = JSON.parse(v3);
-        // type: 'other' für alle alten Einträge ohne Tag
         old.forEach(r => { if (!r.type) r.type = 'other'; });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(old));
         return old;
       }
     }
     return JSON.parse(v4 || '[]');
   } catch { return []; }
 }
-function saveRuns(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(runs));}catch(e){toast('Speicherfehler: '+e.message);}}
+
+// Schreibt NUR Metadaten (ohne Punkte) nach localStorage. Volle Daten liegen
+// bereits in IDB (idbSaveRun wird an jeder Aufrufstelle separat getriggert).
+function saveRuns(){
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(runs.map(toSlimRun)));
+  } catch(e) {
+    toast('Speicherfehler: '+e.message);
+  }
+}
 
 
 // ══════════════════════════════════════════════
@@ -2713,6 +2859,11 @@ window.addEventListener('load', async () => {
     const idbRuns = await idbLoadAllRuns();
     if (idbRuns.length > 0) {
       runs = idbRuns.sort((a,b) => b.startTs - a.startTs);
+      // Schlanken localStorage-Cache aus der IDB-Wahrheit neu aufbauen —
+      // nicht nur bei Mutationen, sondern bei jedem Start. Heilt Drift
+      // (z.B. abgebrochene Migration) automatisch, ohne dass IDB je
+      // Volldaten in localStorage zurückschreibt.
+      saveRuns();
     }
     // Heatmap-Index in RAM laden
     const heatmapEntries = await idbLoadHeatmap();
