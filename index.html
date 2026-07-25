@@ -1015,7 +1015,22 @@ function rollingAvg(points, field, windowSec) {
 // das zwei aufeinanderfolgende Fenster vergleicht und dadurch ~2×windowSec
 // Historie überspannt, misst diese Funktion nur den angefragten Zeitraum —
 // nötig, damit die Momentanleistung aus einem konsistenten Zeitraum stammt.
-function vertSpeedMs(points, windowSec) {
+// Realistische Obergrenze der Vertikalgeschwindigkeit, abhängig von der
+// aktuellen Geschwindigkeit und einer plausiblen maximalen Straßensteigung.
+// Der alte Fixwert (±0.7 m/s, kalibriert fürs Klettern/Laufen) war bei
+// schnellen Radabfahrten viel zu niedrig: bei 65-90 km/h auf einer
+// Steilstrecke sind reale Sinkraten von -1 bis -3 m/s völlig normal. Wurde
+// das künstlich auf ±0.7 gekappt, blieb der (korrekt riesige) Luftwiderstand
+// bei diesem Tempo ungegenrechnet — die Differenz erschien fälschlich als
+// Tretleistung mitten in einer Abfahrt ohne jeden Tritt.
+function maxVertSpeed(speedKmh, type) {
+  const v = (speedKmh || 0) / 3.6;
+  const maxGrade = type === 'bike' ? 0.30 : 0.15; // 30% / 15% als realistische Extremsteigung
+  const absoluteCeiling = type === 'bike' ? 6 : 2; // m/s harte Notbremse, bleibt Ausreißerschutz
+  return Math.min(absoluteCeiling, Math.max(0.7, v * maxGrade));
+}
+
+function vertSpeedMs(points, windowSec, speedKmh, type) {
   let wa = points.filter(p => p.alt != null);
   wa = trimAfterLastGap(wa);
   if (wa.length < 4) return 0;
@@ -1030,10 +1045,8 @@ function vertSpeedMs(points, windowSec) {
   const dt = (t1-t0)/1000;
   if (dt <= 2) return 0;
   const vv = (a1-a0)/dt;
-  // Plausibilitäts-Clamp: GPS-Höhenspikes können vvert auf >2 m/s treiben
-  // (=7200 m/h), was physikalisch unmöglich ist. Max realistisch: ~0.7 m/s
-  // (~2500 m/h, entspricht extremem Klettern). Alles darüber ist Messfehler.
-  return Math.max(-0.7, Math.min(0.7, vv));
+  const cap = maxVertSpeed(speedKmh, type);
+  return Math.max(-cap, Math.min(cap, vv));
 }
 
 function altRateFromWindow(points, windowSec) {
@@ -1565,7 +1578,7 @@ function onGPS(pos) {
   // Luftwiderstandsterm schon aus der Abfahrt — Zustände, die nie gleichzeitig
   // existierten. Messung an dieser Stelle ergab bis zu 886 W Verzerrung.
   const instSpeed = rollingAvg(currentRun.points, 'speed', WATT_INST_SEC);
-  const instVVert = vertSpeedMs(currentRun.points, WATT_INST_SEC);
+  const instVVert = vertSpeedMs(currentRun.points, WATT_INST_SEC, instSpeed, activityType);
   currentRun.points[currentRun.points.length-1].wattInst = calcWatt(instSpeed, instVVert);
   const watt = Math.round(rollingAvg(currentRun.points, 'wattInst', WATT_SMOOTH_SEC));
   const isBike = activityType === 'bike';
@@ -2298,7 +2311,10 @@ function updateSegmentAnalysis(distStart, distEnd) {
         const t0 = winA.slice(0,n).reduce((s,p)=>s+p.ts,0)/n;
         const t1 = winA.slice(-n).reduce((s,p)=>s+p.ts,0)/n;
         const dt = (t1-t0)/1000;
-        if (dt > 2) vvert = Math.max(-0.7, Math.min(0.7, (a1-a0)/dt));
+        if (dt > 2) {
+          const cap = maxVertSpeed(vAvg, detailRun.type || 'other');
+          vvert = Math.max(-cap, Math.min(cap, (a1-a0)/dt));
+        }
       }
       wattsInSeg.push(calcWatt(vAvg, vvert));
     }
