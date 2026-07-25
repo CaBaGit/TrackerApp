@@ -929,6 +929,18 @@ const ALT_MIN_DELTA = 2;
 function speedCapFor(type) {
   return type === 'bike' ? 90 : (type === 'run' ? 30 : 90);
 }
+// Faktor über dem Aktivitäts-Cap, ab dem ein Positionssprung als GPS-Ausreißer
+// gilt. Live (einseitig, onGPS) und Batch (zweiseitig, filterPositionOutliers)
+// nutzen bewusst denselben Wert — beides ist dieselbe Grundfrage ("ist dieser
+// Sprung plausibel"), nur mit unterschiedlich viel Kontext beim Entscheiden.
+const OUTLIER_LIVE_FACTOR  = 1.8;
+const OUTLIER_SPIKE_FACTOR = 1.8;
+// Vertikalgeschwindigkeit, ab der ein einzelner Höhenwert als GPS-/
+// Barometer-Ausreißer gilt statt als reale Steigung/Abfahrt. Orientiert an
+// der bereits bestehenden vertSpeedMs()-Kappung von ±0,7 m/s (2520 m/h) —
+// alles klar darüber ist für jede menschengetriebene Aktivität ohnehin
+// schon an anderer Stelle im Code als physikalisch unrealistisch markiert.
+const ALT_SPIKE_MH = 3000; // m/h
 
 let runs = loadRuns();
 let activityType = 'run';
@@ -1432,6 +1444,7 @@ function onGPS(pos) {
   if (!running||!currentRun) return;
 
   let rawSpeed=speed!=null?speed*3.6:0;
+  const deviceSpeedKmh = speed!=null ? speed*3.6 : null; // unclamped, nur fürs Ausreißer-Cross-Check
 
   if (currentRun.points.length===0) {
     currentRun.points.push({lat,lng,ts,speed:rawSpeed,alt:altitude,altRate:0});
@@ -1447,23 +1460,73 @@ function onGPS(pos) {
   const d=haversine(last.lat,last.lng,lat,lng);
   if(d<0.003) return;
 
+  const dtSec = (ts-last.ts)/1000;
+  const speedCap = speedCapFor(activityType);
+
+  // ── GPS-Ausreißer-Erkennung (live, einseitig — wir kennen nur die
+  // Vergangenheit, nicht den nächsten Punkt) ──────────────────────────
+  // Nach einer echten Signal-Lücke (z.B. Tunnel) ist ein großer Sprung
+  // erwartet und kein Ausreißer, daher hier ausgenommen (dtSec > GPS_GAP_SEC).
+  if (dtSec > 0 && dtSec <= GPS_GAP_SEC) {
+    const posSpeedKmh = (d/dtSec)*3600;
+    // Zwei Signale dafür, dass die POSITION verdächtig ist (nicht nur ein
+    // schneller, aber echter Moment): (a) der Sprung liegt weit über dem
+    // harten Aktivitäts-Cap, oder (b) das Gerät liefert selbst einen
+    // (meist robusteren, Doppler-basierten) Geschwindigkeitswert, der der
+    // Positions-Ableitung klar widerspricht. Diskrepanz ist aussagekräftiger
+    // als ein absoluter Schwellwert allein.
+    const posImplausible = posSpeedKmh > speedCap * OUTLIER_LIVE_FACTOR;
+    const deviceMismatch = deviceSpeedKmh != null &&
+      posSpeedKmh > Math.max(deviceSpeedKmh * OUTLIER_LIVE_FACTOR, speedCap) &&
+      posSpeedKmh > speedCap;
+
+    if (posImplausible || deviceMismatch) {
+      currentRun.outlierStreak = (currentRun.outlierStreak || 0) + 1;
+      // Sicherheitsventil: mehrere "verdächtige" Punkte in Folge sind
+      // vermutlich kein Ausreißer mehr, sondern eine echte, große
+      // Positionsänderung (z.B. nach Reacquisition) — dann nicht dauerhaft
+      // hängen bleiben, sondern den nächsten Punkt akzeptieren.
+      if (currentRun.outlierStreak <= 5) return;
+    }
+  }
+  currentRun.outlierStreak = 0;
+
   // Plausibilitätsgrenze gegen GPS-Ausreißer, je nach Aktivität unterschiedlich
   // (Laufen: realistisch max ~25km/h, Rad: Abfahrten können 70+ km/h erreichen)
-  const speedCap = speedCapFor(activityType);
-  if(rawSpeed<0.5&&d>0){const dt=(ts-last.ts)/1000;rawSpeed=dt>0?Math.min((d/dt)*3600,speedCap):0;}
+  if(rawSpeed<0.5&&d>0){rawSpeed=dtSec>0?Math.min((d/dtSec)*3600,speedCap):0;}
   rawSpeed=Math.min(rawSpeed,speedCap);
 
-  // Höhengewinn
-  let altRateVal=0;
+  // Höhengewinn — mit Live-Ausreißer-Check: ein einzelner GPS/Barometer-
+  // Höhenwert kann kurz um hunderte Meter springen (Vertikalgeschwindigkeit
+  // weit jenseits von allem, was ein Mensch antreiben kann). Anders als bei
+  // der Position verwerfen wir hier NUR den Höhenwert dieses Punkts — Lat/
+  // Lng/Speed sind ein unabhängiger Kanal und bleiben gültig.
+  let altToUse = altitude;
   if(altitude!=null&&currentRun.lastAlt!=null){
     const dAlt=altitude-currentRun.lastAlt;
+    const altRateImplied = dtSec>0 ? Math.abs(dAlt/dtSec)*3600 : 0;
+
+    if (altRateImplied > ALT_SPIKE_MH * OUTLIER_LIVE_FACTOR) {
+      currentRun.altOutlierStreak = (currentRun.altOutlierStreak || 0) + 1;
+      if (currentRun.altOutlierStreak <= 5) {
+        altToUse = null; // weder in elevGain zählen noch dauerhaft speichern
+      } else {
+        currentRun.altOutlierStreak = 0; // Sicherheitsventil: doch akzeptieren (echte Höhenänderung)
+      }
+    } else {
+      currentRun.altOutlierStreak = 0;
+    }
+  }
+
+  let altRateVal=0;
+  if(altToUse!=null&&currentRun.lastAlt!=null){
+    const dAlt=altToUse-currentRun.lastAlt;
     if(Math.abs(dAlt)>=ALT_MIN_DELTA){
       if(dAlt>0) currentRun.elevGain+=dAlt;
-      currentRun.lastAlt=altitude;
-      const dt=(ts-last.ts)/1000;
-      altRateVal=dt>0?(dAlt/dt)*3600:0;
+      currentRun.lastAlt=altToUse;
+      altRateVal=dtSec>0?(dAlt/dtSec)*3600:0;
     }
-  } else if(currentRun.lastAlt==null&&altitude!=null) currentRun.lastAlt=altitude;
+  } else if(currentRun.lastAlt==null&&altToUse!=null) currentRun.lastAlt=altToUse;
 
   // Bearing für neuen Punkt berechnen
   const bearing = currentRun.lastPos
@@ -1471,7 +1534,7 @@ function onGPS(pos) {
     : 0;
 
   currentRun.dist+=d;
-  currentRun.points.push({lat,lng,ts,speed:rawSpeed,alt:altitude,altRate:altRateVal,bearing});
+  currentRun.points.push({lat,lng,ts,speed:rawSpeed,alt:altToUse,altRate:altRateVal,bearing});
   currentRun.lastPos={lat,lng,ts};
 
   // Geschwindigkeitsvergleich (nur wenn Heatmap aktiv) – Matching passiert
@@ -1732,6 +1795,127 @@ function persistRunToIDB(run) {
   }).catch(e => console.warn('IDB save error:', e));
 }
 
+// Erkennt einzelne GPS-Ausreißer nachträglich, wenn die volle Strecke schon
+// bekannt ist (Import, oder eine spätere Bereinigung eines gespeicherten
+// Tracks) — kann dadurch in BEIDE Richtungen schauen, was genauer ist als
+// der rein vorwärtsgerichtete Live-Check in onGPS(): ein Punkt gilt als
+// Ausreißer, wenn er weit von Vorgänger UND Nachfolger entfernt liegt,
+// Vorgänger und Nachfolger selbst aber nah beieinander sind (der direkte Weg
+// p0→p2 ohne den verdächtigen Punkt ist kurz). Betroffene Punkte werden durch
+// eine zeitgewichtete Interpolation zwischen den sauberen Nachbarn ersetzt,
+// nicht gelöscht — das hält Punktzahl und Zeitabstände konsistent, statt
+// eine künstliche Lücke in die Strecke zu reißen.
+function filterPositionOutliers(rawPoints, type) {
+  if (rawPoints.length < 5) return { points: rawPoints, fixedCount: 0 };
+  const cap = speedCapFor(type || 'other');
+  const cleaned = rawPoints.map(p => ({...p}));
+  let fixedCount = 0;
+
+  // Mehrere Durchläufe: nach einer Korrektur kann ein bisher verdeckter
+  // Nachbar-Ausreißer sichtbar werden (z.B. zwei aufeinanderfolgende Spikes).
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    for (let i = 1; i < cleaned.length - 1; i++) {
+      const p0 = cleaned[i-1], p1 = cleaned[i], p2 = cleaned[i+1];
+      const dtOut = (p1.ts - p0.ts) / 1000, dtBack = (p2.ts - p1.ts) / 1000;
+      if (dtOut <= 0 || dtBack <= 0) continue;
+      const dOut  = haversine(p0.lat, p0.lng, p1.lat, p1.lng);
+      const dBack = haversine(p1.lat, p1.lng, p2.lat, p2.lng);
+      const dSkip = haversine(p0.lat, p0.lng, p2.lat, p2.lng); // direkter Weg ohne p1
+      const vOut  = (dOut  / dtOut ) * 3600;
+      const vBack = (dBack / dtBack) * 3600;
+
+      const isSpike = vOut > cap * OUTLIER_SPIKE_FACTOR && vBack > cap * OUTLIER_SPIKE_FACTOR &&
+                      dSkip < Math.max(dOut, dBack) * 0.4;
+      if (!isSpike) continue;
+
+      const t = (p1.ts - p0.ts) / (p2.ts - p0.ts);
+      cleaned[i] = {
+        ...p1,
+        lat: p0.lat + (p2.lat - p0.lat) * t,
+        lng: p0.lng + (p2.lng - p0.lng) * t,
+        alt: (p0.alt != null && p2.alt != null) ? p0.alt + (p2.alt - p0.alt) * t : p1.alt,
+      };
+      fixedCount++;
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  return { points: cleaned, fixedCount };
+}
+
+// Baut aus einer (ggf. bereinigten) Liste von {lat,lng,ts,alt}-Punkten alle
+// abgeleiteten Felder neu auf: speed, cumulierte Distanz, Höhenmeter, Splits.
+// Gemeinsam genutzt von GPX-Import, JSON-Import und der nachträglichen
+// Track-Bereinigung, damit nach einer Ausreißer-Korrektur überall dieselben,
+// konsistenten Werte entstehen statt alter, ggf. verfälschter Zahlen.
+// Höhenwerte sind störanfälliger als die Position — ein einzelner GPS-/
+// Barometer-Messwert kann kurzzeitig um hunderte Meter springen und direkt
+// danach wieder normal sein. Gleiches Zwei-Wege-Prinzip wie
+// filterPositionOutliers, nur auf der Höhen- statt der Positions-Achse: ein
+// Punkt gilt als Ausreißer, wenn sowohl der Sprung zu ihm hin als auch der
+// Rücksprung zum Nachfolger jenseits von ALT_SPIKE_MH liegen UND in
+// entgegengesetzte Richtung zeigen (das "kurz" — rauf und gleich wieder
+// runter, oder umgekehrt), der direkte Weg vom Vorgänger zum Nachfolger
+// (ohne den verdächtigen Punkt) aber plausibel bleibt. Nur die Höhe wird
+// korrigiert (Interpolation), Position/Zeit des Punkts bleiben unangetastet.
+function filterAltitudeOutliers(rawPoints) {
+  if (rawPoints.length < 5) return { points: rawPoints, fixedCount: 0 };
+  const cleaned = rawPoints.map(p => ({...p}));
+  let fixedCount = 0;
+
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    for (let i = 1; i < cleaned.length - 1; i++) {
+      const p0 = cleaned[i-1], p1 = cleaned[i], p2 = cleaned[i+1];
+      if (p0.alt == null || p1.alt == null || p2.alt == null) continue;
+      const dtOut = (p1.ts - p0.ts) / 1000, dtBack = (p2.ts - p1.ts) / 1000;
+      if (dtOut <= 0 || dtBack <= 0) continue;
+
+      const rOut  = ((p1.alt - p0.alt) / dtOut ) * 3600; // m/h
+      const rBack = ((p2.alt - p1.alt) / dtBack) * 3600; // m/h
+      const rSkip = ((p2.alt - p0.alt) / (dtOut + dtBack)) * 3600; // direkter Weg ohne p1
+
+      const isSpike = Math.abs(rOut) > ALT_SPIKE_MH && Math.abs(rBack) > ALT_SPIKE_MH &&
+                      (rOut > 0) !== (rBack > 0) &&
+                      Math.abs(rSkip) < ALT_SPIKE_MH;
+      if (!isSpike) continue;
+
+      const t = (p1.ts - p0.ts) / (p2.ts - p0.ts);
+      cleaned[i] = { ...p1, alt: p0.alt + (p2.alt - p0.alt) * t };
+      fixedCount++;
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  return { points: cleaned, fixedCount };
+}
+
+function buildDerivedTrackFields(rawPoints, type) {
+  const speedCap = speedCapFor(type || 'other');
+  let prevPt = null, cumDist = 0, elevGain = 0, lastSplitKm = 0;
+  const points = [], splits = [];
+  const t0 = rawPoints[0].ts;
+  rawPoints.forEach(pt => {
+    const {lat,lng,ts,alt} = pt;
+    let speed = 0;
+    if (prevPt) {
+      const d = haversine(prevPt.lat, prevPt.lng, lat, lng), dt = (ts-prevPt.ts)/1000;
+      speed = dt > 0 ? Math.min((d/dt)*3600, speedCap) : 0;
+      cumDist += d;
+      if (alt != null && prevPt.alt != null) {
+        const dA = alt - prevPt.alt;
+        if (dA >= ALT_MIN_DELTA) elevGain += dA;
+      }
+      const km = Math.floor(cumDist);
+      if (km > lastSplitKm) { splits.push({km, elapsed:(ts-t0)/1000}); lastSplitKm = km; }
+    }
+    points.push({lat, lng, ts, speed, alt, altRate:0});
+    prevPt = {lat, lng, ts, alt};
+  });
+  return { points, splits, dist: cumDist, elevGain };
+}
+
 function saveRun() {
   if(!currentRun||currentRun.points.length<2) return;
   const run={id:currentRun.id,startTs:currentRun.startTs,duration:elapsed,dist:currentRun.dist,
@@ -1764,11 +1948,29 @@ function importJSON(event) {
       run.source=run.source||'json';
       if(!run.type)run.type='other';
       if(runs.find(x=>x.id===run.id)){ toast('Lauf bereits vorhanden'); return; }
+
+      // Gleicher Ausreißer-Check wie beim GPX-Import — betrifft nur Tracks,
+      // die selbst schon Ausreißer enthalten (z.B. exportiert aus einer
+      // älteren App-Version ohne Live-Filter). Unauffällige Imports bleiben
+      // unangetastet, nur bei tatsächlichem Fund werden die abgeleiteten
+      // Felder (speed/dist/elevGain/splits) neu berechnet. Position und
+      // Höhe sind unabhängige Kanäle, deshalb zwei getrennte Filter.
+      const raw = run.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt}));
+      const posResult = filterPositionOutliers(raw, run.type);
+      const altResult = filterAltitudeOutliers(posResult.points);
+      const fixedCount = posResult.fixedCount + altResult.fixedCount;
+      if (fixedCount > 0) {
+        const {points, splits, dist, elevGain} = buildDerivedTrackFields(altResult.points, run.type);
+        run.points = points; run.splits = splits; run.dist = dist; run.elevGain = elevGain;
+      }
+
       // bearing (re)berechnen — kostet nichts, macht importierte Tracks
       // heatmap-/referenztrack-tauglich, egal ob die Quelldatei es schon hatte
       addBearingToRun(run);
       persistRunToIDB(run);
-      runs.unshift(run);saveRuns();toast('Lauf importiert');renderHistory();
+      runs.unshift(run);saveRuns();
+      toast(fixedCount>0 ? `Lauf importiert (${fixedCount} GPS-Ausreißer korrigiert)` : 'Lauf importiert');
+      renderHistory();
     }catch(err){toast('Fehler: '+err.message);}
   };
   r.readAsText(file);event.target.value='';
@@ -1782,22 +1984,33 @@ function importGPX(event) {
       const trkpts=Array.from(xml.querySelectorAll('trkpt'));
       if(!trkpts.length)throw new Error('Keine Trackpunkte');
       const importType='other'; // Aktivität ist beim GPX-Import unbekannt, wie bisher
-      const speedCap = speedCapFor(importType); // dieselbe Grenze wie im Live-Tracking statt eines eigenen Fixwerts
-      let prevPt=null,cumDist=0,elevGain=0,lastSplitKm=0;
-      const points=[],splits=[];
-      trkpts.forEach(pt=>{
+
+      // 1. Rohpunkte extrahieren (nur Position/Zeit/Höhe, noch keine Ableitungen)
+      const raw = trkpts.map(pt => {
         const lat=parseFloat(pt.getAttribute('lat')),lng=parseFloat(pt.getAttribute('lon'));
         const timeEl=pt.querySelector('time'),ts=timeEl?new Date(timeEl.textContent).getTime():Date.now();
         const eleEl=pt.querySelector('ele'),alt=eleEl?parseFloat(eleEl.textContent):null;
-        let speed=0;
-        if(prevPt){const d=haversine(prevPt.lat,prevPt.lng,lat,lng),dt=(ts-prevPt.ts)/1000;speed=dt>0?Math.min((d/dt)*3600,speedCap):0;cumDist+=d;if(alt!=null&&prevPt.alt!=null){const dA=alt-prevPt.alt;if(dA>=ALT_MIN_DELTA)elevGain+=dA;}const km=Math.floor(cumDist);if(km>lastSplitKm){const t0=trkpts[0].querySelector('time');splits.push({km,elapsed:(ts-(t0?new Date(t0.textContent).getTime():ts))/1000});lastSplitKm=km;}}
-        points.push({lat,lng,ts,speed,alt,altRate:0});prevPt={lat,lng,ts,alt};
+        return {lat,lng,ts,alt};
       });
+
+      // 2. GPS-Ausreißer korrigieren, BEVOR Speed/Distanz/Splits daraus
+      // berechnet werden — sonst fließt ein einzelner Sprung doppelt ein
+      // (einmal raus, einmal zurück) und verzerrt Distanz und Speed-Chart.
+      // Position und Höhe sind unabhängige Kanäle, deshalb zwei getrennte Filter.
+      const posResult = filterPositionOutliers(raw, importType);
+      const altResult = filterAltitudeOutliers(posResult.points);
+      const fixedCount = posResult.fixedCount + altResult.fixedCount;
+      const {points, splits, dist:cumDist, elevGain} = buildDerivedTrackFields(altResult.points, importType);
+
       const run={id:points[0].ts,startTs:points[0].ts,duration:(points[points.length-1].ts-points[0].ts),dist:cumDist,elevGain,points,splits,source:'gpx',name:xml.querySelector('name')?.textContent||file.name,type:importType};
       if(runs.find(x=>x.id===run.id)){ toast('Track bereits vorhanden'); return; }
       addBearingToRun(run);
       persistRunToIDB(run);
-      runs.unshift(run);saveRuns();toast('GPX importiert: '+cumDist.toFixed(2)+' km');renderHistory();
+      runs.unshift(run);saveRuns();
+      toast(fixedCount>0
+        ? `GPX importiert: ${cumDist.toFixed(2)} km (${fixedCount} GPS-Ausreißer korrigiert)`
+        : `GPX importiert: ${cumDist.toFixed(2)} km`);
+      renderHistory();
     }catch(err){toast('GPX-Fehler: '+err.message);}
   };
   r.readAsText(file);event.target.value='';
@@ -1957,7 +2170,8 @@ function initDetailView(run) {
   document.getElementById('compareActions').innerHTML =
     `<button class="run-action-btn primary" onclick="reexportRun(${run.id})">↓ GPX</button>
      <button class="run-action-btn primary" onclick="exportJSON(runs.find(r=>r.id===${run.id}))">↓ JSON</button>
-     <button class="run-action-btn" onclick="setAsRef(${run.id})">${activeRefRunId===run.id?'★ Ref entfernen':'☆ Als Referenz'}</button>`;
+     <button class="run-action-btn" onclick="setAsRef(${run.id})">${activeRefRunId===run.id?'★ Ref entfernen':'☆ Als Referenz'}</button>
+     <button class="run-action-btn" onclick="cleanCurrentDetailTrack()">🧹 GPS bereinigen</button>`;
 
   // Karte
   if (cMap) cMap.eachLayer(l => { if(l instanceof L.Polyline||l instanceof L.CircleMarker) cMap.removeLayer(l); });
@@ -2279,6 +2493,25 @@ async function idbLoadRun(id) {
     const req = tx.objectStore('tracks').get(id);
     req.onsuccess = () => res(req.result || null);
     req.onerror   = () => rej(req.error);
+  });
+}
+
+// Löscht nur die Heatmap-Einträge EINES Tracks (der Track selbst in 'tracks'
+// bleibt unangetastet). Gebraucht beim Bereinigen: nach einer
+// Ausreißer-Korrektur müssen die alten, auf falschen Positionen basierenden
+// Heatmap-Punkte raus, bevor die neuen reinkommen — sonst zeigt 🔥 für
+// diesen Track doppelte bzw. widersprüchliche Referenzpunkte.
+async function idbDeleteHeatmapForTrack(id) {
+  if (!idb) return;
+  return new Promise((res,rej) => {
+    const tx = idb.transaction('heatmap','readwrite');
+    const idx = tx.objectStore('heatmap').index('trackId');
+    const req = idx.openCursor(IDBKeyRange.only(id));
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if (cursor) { cursor.delete(); cursor.continue(); }
+    };
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
   });
 }
 
@@ -2677,6 +2910,50 @@ function toSlimRun(run) {
   const slim = {};
   RUN_META_FIELDS.forEach(k => { if (run[k] !== undefined) slim[k] = run[k]; });
   return slim;
+}
+
+// Bereinigt den gerade in der Detailansicht offenen Track nachträglich von
+// GPS-Ausreißern (derselbe Zwei-Wege-Filter wie beim Import). Betrifft Tracks,
+// die schon vor diesem Fix aufgezeichnet/importiert wurden — für neue
+// Aufnahmen greift bereits der Live-Filter in onGPS(), für neue Importe der
+// Filter in importGPX()/importJSON().
+async function cleanCurrentDetailTrack() {
+  if (!detailRun || !detailRun.points || detailRun.points.length < 5) { toast('Zu wenig Punkte'); return; }
+
+  const raw = detailRun.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt}));
+  const posResult = filterPositionOutliers(raw, detailRun.type || 'other');
+  const altResult = filterAltitudeOutliers(posResult.points);
+  const fixedCount = posResult.fixedCount + altResult.fixedCount;
+  if (fixedCount === 0) { toast('Keine GPS-Ausreißer gefunden'); return; }
+  const cleanedRaw = altResult.points;
+
+  const {points, splits, dist, elevGain} = buildDerivedTrackFields(cleanedRaw, detailRun.type || 'other');
+  detailRun.points = points;
+  detailRun.splits = splits;
+  detailRun.dist = dist;
+  detailRun.elevGain = elevGain;
+  addBearingToRun(detailRun); // Bearing hängt von der Position ab, nach Korrektur neu berechnen
+
+  try {
+    // Track in IDB überschreiben, dann Heatmap-Einträge dieses Tracks
+    // komplett neu aufbauen (alte, ggf. falsche Punkte erst raus)
+    await idbSaveRun(detailRun);
+    await idbDeleteHeatmapForTrack(detailRun.id);
+    for (const key in spatialIndex) {
+      spatialIndex[key] = spatialIndex[key].filter(e => e.trackId !== detailRun.id);
+    }
+    const entries = buildHeatmapEntries(detailRun);
+    await idbSaveHeatmapEntries(entries);
+    for (const e of entries) {
+      if (!spatialIndex[e.cellKey]) spatialIndex[e.cellKey] = [];
+      spatialIndex[e.cellKey].push(e);
+    }
+  } catch(e) { console.warn('Bereinigen: IDB-Fehler', e); }
+
+  saveRuns(); // Metadaten-Cache: dist/elevGain haben sich ggf. leicht geändert
+  toast(`${fixedCount} GPS-Ausreißer korrigiert ✓`);
+  initDetailView(detailRun); // Karte/Slider/Kennzahlen mit korrigierten Daten neu zeichnen
+  renderHistory();
 }
 
 function loadRuns(){
