@@ -1939,20 +1939,56 @@ function updateSegmentAnalysis(distStart, distEnd) {
   const dur  = (seg[seg.length-1].ts - seg[0].ts) / 1000; // Sekunden
   const avgSpd = dur > 0 ? (dist / dur) * 3600 : 0;
 
-  // Höhenmeter
-  let hmUp = 0, hmDown = 0;
-  for (let i=1; i<seg.length; i++) {
-    if (seg[i].alt!=null && seg[i-1].alt!=null) {
-      const d = seg[i].alt - seg[i-1].alt;
-      if (d >= ALT_MIN_DELTA)  hmUp   += d;
-      if (d <= -ALT_MIN_DELTA) hmDown += Math.abs(d);
+  // Höhenmeter: kumulativer Ansatz mit Threshold 5m.
+  // Punkt-zu-Punkt-Delta (ALT_MIN_DELTA=2m) versagt bei GPS-Tracks weil
+  // viele Punkte die gleiche gerundete Höhe haben → fast alle Deltas < 2m
+  // → HM wird massiv unterschätzt. Kumulativer Ansatz: merke letzten
+  // "stabilen" Höhenwert und addiere erst wenn Abweichung ≥ 5m.
+  const HM_THRESHOLD = 5; // Meter
+  let hmUp = 0, hmDown = 0, lastStableAlt = null;
+  for (let i=0; i<seg.length; i++) {
+    const a = seg[i].alt;
+    if (a == null) continue;
+    if (lastStableAlt === null) { lastStableAlt = a; continue; }
+    const d = a - lastStableAlt;
+    if (Math.abs(d) >= HM_THRESHOLD) {
+      if (d > 0) hmUp   += d;
+      else       hmDown += Math.abs(d);
+      lastStableAlt = a;
     }
   }
   const hmh = dur > 5 ? (hmUp / dur) * 3600 : 0;
   const gradient = dist > 0 ? (hmUp / (dist*1000)) * 100 : 0;
 
-  // Ø Watt für das Segment
-  const wattsInSeg = seg.map(p => p.wattInst || 0).filter(w => w > 0);
+  // Ø Watt für das Segment.
+  // wattInst existiert nur bei live aufgezeichneten Tracks.
+  // Für importierte Tracks (GPX/JSON) muss Watt aus Speed + Höhe
+  // nachberechnet werden. Wir nutzen denselben Algorithmus wie onGPS:
+  // Momentanleistung aus konsistentem Zeitfenster, dann mitteln.
+  let wattsInSeg = seg.map(p => p.wattInst || 0).filter(w => w > 0);
+  if (wattsInSeg.length === 0 && seg.length > 4) {
+    // Nachberechnung für importierte Tracks
+    const WSEC = 20; // Sekunden-Fenster für Momentanleistung
+    for (let i = 4; i < seg.length; i++) {
+      const tCut = seg[i].ts - WSEC*1000;
+      const win  = seg.slice(0, i+1).filter(p => p.ts >= tCut);
+      const vAvg = win.reduce((s,p)=>s+(p.speed||0),0)/win.length;
+      // Vertikalgeschwindigkeit aus dem gleichen Fenster
+      const winA = win.filter(p=>p.alt!=null);
+      let vvert = 0;
+      if (winA.length >= 4) {
+        const n = Math.min(3, Math.floor(winA.length/2));
+        const a0 = winA.slice(0,n).reduce((s,p)=>s+p.alt,0)/n;
+        const a1 = winA.slice(-n).reduce((s,p)=>s+p.alt,0)/n;
+        const t0 = winA.slice(0,n).reduce((s,p)=>s+p.ts,0)/n;
+        const t1 = winA.slice(-n).reduce((s,p)=>s+p.ts,0)/n;
+        const dt = (t1-t0)/1000;
+        if (dt > 2) vvert = (a1-a0)/dt;
+      }
+      const w = calcWatt(vAvg, vvert);
+      if (w > 0) wattsInSeg.push(w);
+    }
+  }
   const avgWatt = wattsInSeg.length > 0 ? Math.round(wattsInSeg.reduce((a,b)=>a+b,0)/wattsInSeg.length) : 0;
   const isBike = (detailRun.type || 'other') === 'bike';
 
@@ -1962,12 +1998,11 @@ function updateSegmentAnalysis(distStart, distEnd) {
     <div class="seg-stat accent"><div class="seg-stat-val">${dist.toFixed(2)}</div><div class="seg-stat-lbl">km Distanz</div></div>
     <div class="seg-stat"><div class="seg-stat-val">${fmtTime(dur)}</div><div class="seg-stat-lbl">Dauer</div></div>
     <div class="seg-stat blue"><div class="seg-stat-val">${avgSpd.toFixed(1)}</div><div class="seg-stat-lbl">km/h Ø</div></div>
-    <div class="seg-stat"><div class="seg-stat-val">${fmtPace(dur/dist)}</div><div class="seg-stat-lbl">min/km Pace</div></div>
+    <div class="seg-stat"><div class="seg-stat-val">${isBike && avgWatt > 0 ? avgWatt+'W' : fmtPace(dur/dist)}</div><div class="seg-stat-lbl">${isBike ? 'Watt Ø' : 'min/km Pace'}</div></div>
     <div class="seg-stat accent"><div class="seg-stat-val">${Math.round(hmUp)}</div><div class="seg-stat-lbl">m ↑ Höhenmeter</div></div>
     <div class="seg-stat"><div class="seg-stat-val">${Math.round(hmDown)}</div><div class="seg-stat-lbl">m ↓ Abstieg</div></div>
     <div class="seg-stat purple"><div class="seg-stat-val">${Math.round(hmh)}</div><div class="seg-stat-lbl">m/h Steigrate</div></div>
     <div class="seg-stat"><div class="seg-stat-val">${gradient.toFixed(1)}%</div><div class="seg-stat-lbl">Ø Steigung</div></div>
-    ${isBike && avgWatt > 0 ? `<div class="seg-stat blue" style="grid-column:span 2"><div class="seg-stat-val">${avgWatt}</div><div class="seg-stat-lbl">Watt Ø</div></div>` : ''}
   `;
 
   // Watt-Intensitätsverteilung (nur Radfahren)
