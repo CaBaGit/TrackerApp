@@ -2262,12 +2262,27 @@ function updateSegmentAnalysis(distStart, distEnd) {
 
   // Ø Watt für das Segment.
   // wattInst existiert nur bei live aufgezeichneten Tracks.
-  // Für importierte Tracks (GPX/JSON) muss Watt aus Speed + Höhe
+  // Für importierte/bereinigte Tracks muss Watt aus Speed + Höhe
   // nachberechnet werden. Wir nutzen denselben Algorithmus wie onGPS:
   // Momentanleistung aus konsistentem Zeitfenster, dann mitteln.
-  let wattsInSeg = seg.map(p => p.wattInst || 0).filter(w => w > 0);
-  if (wattsInSeg.length === 0 && seg.length > 4) {
-    // Nachberechnung für importierte Tracks
+  //
+  // WICHTIG: hier NICHT auf w>0 filtern. calcWatt() liefert schon 0 statt
+  // negativer Werte (man tritt nicht negativ, man rollt bergab) — das ist
+  // richtig so. Diese 0-Watt-Fenster aber komplett aus der Mittelung
+  // AUSZUSCHLIESSEN statt mit vollem Gewicht als 0 einzurechnen, war der
+  // eigentliche Fehler: "Ø Watt" wurde dadurch faktisch zu "Ø Watt NUR
+  // während aktiver Tretphasen" und überschätzte den echten Schnitt
+  // systematisch. Bestätigt an einem echten 36-km-Track: 264 W (alt,
+  // 0-Watt-Fenster rausgefiltert) vs. 217 W (korrekt über alle Fenster
+  // gemittelt) — allein durch diesen Fix, ganz ohne geänderte GPS-Werte.
+  let wattsInSeg;
+  const hasStoredWatt = seg.some(p => p.wattInst != null);
+  if (hasStoredWatt) {
+    wattsInSeg = seg.map(p => p.wattInst != null ? p.wattInst : 0);
+  } else if (seg.length > 4) {
+    // Nachberechnung für importierte oder nachträglich bereinigte Tracks
+    // (kein gespeichertes wattInst vorhanden)
+    wattsInSeg = [];
     const WSEC = 20; // Sekunden-Fenster für Momentanleistung
     for (let i = 4; i < seg.length; i++) {
       const tCut = seg[i].ts - WSEC*1000;
@@ -2285,9 +2300,10 @@ function updateSegmentAnalysis(distStart, distEnd) {
         const dt = (t1-t0)/1000;
         if (dt > 2) vvert = Math.max(-0.7, Math.min(0.7, (a1-a0)/dt));
       }
-      const w = calcWatt(vAvg, vvert);
-      if (w > 0) wattsInSeg.push(w);
+      wattsInSeg.push(calcWatt(vAvg, vvert));
     }
+  } else {
+    wattsInSeg = [];
   }
   const avgWatt = wattsInSeg.length > 0 ? Math.round(wattsInSeg.reduce((a,b)=>a+b,0)/wattsInSeg.length) : 0;
   const isBike = (detailRun.type || 'other') === 'bike';
