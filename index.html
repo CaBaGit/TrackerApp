@@ -1006,6 +1006,28 @@ function rollingAvg(points, field, windowSec) {
   return w.length ? w.reduce((s,p)=>s+(p[field]||0),0)/w.length : 0;
 }
 
+// Gleiches Ergebnis wie rollingAvg() an JEDEM Punkt eines Tracks, aber in
+// einem einzigen O(n)-Durchlauf (Sliding Window mit zwei Zeigern) statt
+// rollingAvg() pro Punkt erneut über den kompletten bisherigen Track laufen
+// zu lassen — das wäre bei einem 5000-Punkte-Track O(n²) und spürbar
+// langsam beim Öffnen der Detailansicht.
+function slidingWindowAvg(pts, field, windowSec) {
+  const out = new Array(pts.length).fill(0);
+  let start = 0, sum = 0;
+  for (let i = 0; i < pts.length; i++) {
+    if (i > 0 && (pts[i].ts - pts[i-1].ts) > GPS_GAP_SEC*1000) {
+      // Lücke: Fenster zurücksetzen, wie trimAfterLastGap() es für den
+      // Einzelaufruf tun würde
+      start = i; sum = 0;
+    }
+    sum += pts[i][field] || 0;
+    const cutoff = pts[i].ts - windowSec*1000;
+    while (start < i && pts[start].ts < cutoff) { sum -= pts[start][field] || 0; start++; }
+    out[i] = (i - start + 1) > 0 ? sum / (i - start + 1) : 0;
+  }
+  return out;
+}
+
 // HM/h aus geglätteter Höhe: gleitender Höhenschnitt JETZT minus gleitender
 // Höhenschnitt vor windowSec, geteilt durch windowSec. Robuster gegen GPS-
 // Rauschen als eine Mittelung einzelner Punkt-zu-Punkt-Raten, weil alle
@@ -2186,14 +2208,25 @@ function initDetailView(run) {
      <button class="run-action-btn" onclick="setAsRef(${run.id})">${activeRefRunId===run.id?'★ Ref entfernen':'☆ Als Referenz'}</button>
      <button class="run-action-btn" onclick="cleanCurrentDetailTrack()">🧹 GPS bereinigen</button>`;
 
-  // Karte
+  // Karte: Vergleich zu früheren Fahrten an denselben Stellen, gleiche
+  // Skala wie 🔥 im Live-Tracker (🔴 langsamer · 🟡 kein Unterschied ·
+  // 🟢 schneller). Der Track wird dabei aus dem eigenen Vergleich
+  // ausgeschlossen (matchSpeed(...,run.id)) — sonst würde er sich auf wenig
+  // gefahrenen Strecken teilweise mit sich selbst vergleichen. Keine
+  // historischen Daten an einer Stelle → neutrales Grau statt einer
+  // erfundenen Farbe, das ist selbst eine ehrliche Aussage.
   if (cMap) cMap.eachLayer(l => { if(l instanceof L.Polyline||l instanceof L.CircleMarker) cMap.removeLayer(l); });
-  const speeds = pts.map(p=>p.speed||0);
-  const minS = Math.min(...speeds), maxS = Math.max(...speeds,1);
   if (cMap && pts.length > 1) {
+    const runType = run.type || 'other';
+    const smoothedSpeeds = slidingWindowAvg(pts, 'speed', SPEED_AVG_SEC);
     for (let i=1;i<pts.length;i++) {
-      L.polyline([[pts[i-1].lat,pts[i-1].lng],[pts[i].lat,pts[i].lng]],
-        {color:speedColor(speeds[i],minS,maxS), weight:4, opacity:0.8}).addTo(cMap);
+      const p = pts[i];
+      const match = p.bearing != null
+        ? matchSpeed(p.lat, p.lng, p.bearing, smoothedSpeeds[i], runType, run.id)
+        : null;
+      const color = match ? compareColor(match.pct) : '#6b7280'; // Grau: keine Vergleichsdaten an dieser Stelle
+      L.polyline([[pts[i-1].lat,pts[i-1].lng],[p.lat,p.lng]],
+        {color, weight:4, opacity:0.8}).addTo(cMap);
     }
     L.circleMarker([pts[0].lat,pts[0].lng],{radius:6,color:'#00e5a0',fillColor:'#00e5a0',fillOpacity:1}).addTo(cMap);
     L.circleMarker([pts[pts.length-1].lat,pts[pts.length-1].lng],{radius:6,color:'#ef4444',fillColor:'#ef4444',fillOpacity:1}).addTo(cMap);
@@ -2690,7 +2723,7 @@ function neighborCells(lat, lng) {
 }
 
 // Geschwindigkeitsvergleich für aktuellen Punkt
-function matchSpeed(lat, lng, bearing, currentSpeed) {
+function matchSpeed(lat, lng, bearing, currentSpeed, type, excludeTrackId) {
   const cells = neighborCells(lat, lng);
   const matches = [];
   for (const ck of cells) {
@@ -2703,7 +2736,11 @@ function matchSpeed(lat, lng, bearing, currentSpeed) {
       const angleDiff = Math.abs(((bearing - e.bearing + 540) % 360) - 180);
       if (angleDiff > MATCH_ANGLE) continue;
       // Nur gleiche Aktivität
-      if (e.type !== activityType) continue;
+      if (e.type !== type) continue;
+      // Beim Betrachten eines geladenen Tracks dessen eigene Punkte
+      // ausschließen — sonst vergleicht sich der Track teilweise mit sich
+      // selbst (besonders auffällig auf wenig gefahrenen Strecken).
+      if (excludeTrackId != null && e.trackId === excludeTrackId) continue;
       matches.push(e.speed);
     }
   }
@@ -2763,16 +2800,27 @@ function toggleHeatmap() {
   });
 }
 
-// Vergleichsfarbe: 4 diskrete Bänder
-//   pct ≤ -5%          → rot    (deutlich langsamer)
-//   -5% < pct ≤ 0%      → gelb   (leicht langsamer)
-//   0%  < pct ≤ +5%     → grün   (leicht schneller / etwa gleich)
-//   pct > +5%           → blau   (deutlich schneller)
+// Vergleichsfarbe: kontinuierlicher Verlauf statt fixer Bänder.
+//   |pct| ≤ 2%   → helles Amber/Gelb ("Ampel-Gelb") — kein nennenswerter Unterschied
+//   pct < -2%    → Rot, wird zu -15% hin kräftiger  (langsamer als sonst)
+//   pct > +2%    → Grün, wird zu +15% hin kräftiger (schneller als sonst)
+// Eine Farbfamilie pro Richtung statt mehrerer benannter Farben (kein
+// "ist Lila schlimmer als Rot?") — Intensität = Größe der Abweichung, direkt
+// ablesbar. Rot bleibt bewusst heller/wärmer, Grün bewusst dunkler/kühler
+// (unterschiedliche Helligkeit, nicht nur Farbton) — das hält den Kontrast
+// zwischen beiden Seiten auch dann hoch, wenn die Farbsättigung im Auge/auf
+// dem Display mal schwächer ankommt, ganz ohne an der Rot-Grün-Wahl selbst
+// etwas zu ändern.
 function compareColor(pct) {
-  if (pct <= -5) return '#ef4444'; // rot
-  if (pct <= 0)  return '#eab308'; // gelb
-  if (pct <= 5)  return '#00e5a0'; // grün
-  return '#3b82f6';                 // blau
+  const NEUTRAL = 2;   // ±2%: Ampel-Gelb, "kein Unterschied"
+  const MAX_DEV = 15;  // ab hier volle Sättigung
+
+  if (Math.abs(pct) <= NEUTRAL) return 'rgb(250,204,21)'; // Ampel-Gelb
+
+  const t = Math.min(1, (Math.abs(pct) - NEUTRAL) / (MAX_DEV - NEUTRAL));
+  const from = [250,204,21]; // Ampel-Gelb als Übergangspunkt
+  const to   = pct < 0 ? [185,28,28] : [21,101,52]; // kräftiges Rot / dunkles Grün
+  return `rgb(${Math.round(from[0]+t*(to[0]-from[0]))},${Math.round(from[1]+t*(to[1]-from[1]))},${Math.round(from[2]+t*(to[2]-from[2]))})`;
 }
 
 // Farbige Spur inkrementell zeichnen: nur NEUE Segmente werden hinzugefügt,
@@ -2797,7 +2845,7 @@ function updateCompareSpur(points) {
     // nicht Rauschen gegen Rauschen hält (Index speichert ebenfalls geglättet)
     const midSpeed = rollingAvg(points.slice(0, i + midOffset + 1), 'speed', SPEED_AVG_SEC);
     const match = mid.bearing != null
-      ? matchSpeed(mid.lat, mid.lng, mid.bearing, midSpeed)
+      ? matchSpeed(mid.lat, mid.lng, mid.bearing, midSpeed, activityType)
       : null;
     const color = match ? compareColor(match.pct) : '#00e5a0';
     const layer = L.polyline(chunk.map(p=>[p.lat,p.lng]), {color, weight:5, opacity:0.9, interactive:false});
