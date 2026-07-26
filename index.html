@@ -1367,6 +1367,7 @@ function startRun() {
 function stopRun() {
   running=false; elapsed+=Date.now()-startTime;
   clearInterval(timerInt);
+  if (heatmapActive && currentRun && currentRun.points.length > 1) updateCompareSpur(currentRun.points, true);
   if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null;}
   updateToggleBtn();
   if(currentRun&&currentRun.points.length>2) document.getElementById('btnSave').disabled=false;
@@ -1926,9 +1927,134 @@ function filterAltitudeOutliers(rawPoints) {
   return { points: cleaned, fixedCount };
 }
 
+// ══════════════════════════════════════════════
+//  GLÄTTUNG (distanzbasiert) — getrennt für Position und Höhe
+//  --------------------------------------------------
+//  Anders als filterPositionOutliers/filterAltitudeOutliers, die nur einzelne
+//  Sprünge mit sauberen Nachbarn erkennen, wirkt die Glättung leicht auf JEDEN
+//  Punkt und räumt damit auch flächiges GPS-Rauschen auf (dichter Baumbestand,
+//  Mehrwegeausbreitung), wo mehrere Punkte am Stück streuen und es keine
+//  "sauberen Nachbarn" zum Interpolieren gibt.
+//
+//  Das Fenster ist in METERN definiert, nicht in Punkten. Dadurch passt sich
+//  die Glättung automatisch an die Punktdichte an: bergab / schnell (wenige,
+//  weit auseinanderliegende Punkte) wird vorsichtiger gefiltert, bergauf /
+//  langsam / beim Laufen (viele dichte Punkte) kräftiger — mit einer einzigen
+//  Einstellung. Ein festes "N Punkte" würde bei 4 m Schrittweite (langsam) und
+//  12 m Schrittweite (schnell) völlig unterschiedlich stark glätten.
+//
+//  Median statt Mittelwert: der Median verwirft einzelne Ausreißer im Fenster,
+//  statt sie einzumischen, und schneidet echte Kurven weniger ab.
+// ══════════════════════════════════════════════
+const SMOOTH_POS_M = 25; // Positionsfenster: Karte + Distanz entrauschen, Kurven weitgehend erhalten
+const SMOOTH_ALT_M = 35; // Höhenfenster: Profil + elevGain glätten (etwas kräftiger, Höhe darf glatter sein)
+
+// Kumulierte Distanz (km) je Punkt — Basis fürs distanzbasierte Fenster.
+function cumDistances(pts) {
+  const cum = new Array(pts.length);
+  cum[0] = 0;
+  for (let i = 1; i < pts.length; i++) {
+    cum[i] = cum[i-1] + haversine(pts[i-1].lat, pts[i-1].lng, pts[i].lat, pts[i].lng);
+  }
+  return cum;
+}
+
+function median(arr) {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a,b)=>a-b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2;
+}
+
+// Distanzbasierter gleitender Median auf lat/lng. Zwei-Zeiger-Fenster über die
+// kumulierte Distanz, O(n·k) mit kleinem k (Punkte im Fenster).
+function smoothPositionMedian(pts, windowM) {
+  if (pts.length < 5) return pts.map(p => ({...p}));
+  const cum = cumDistances(pts);
+  const halfKm = (windowM / 2) / 1000;
+  const out = pts.map(p => ({...p}));
+  let lo = 0, hi = 0;
+  for (let i = 0; i < pts.length; i++) {
+    while (lo < i && cum[i] - cum[lo] > halfKm) lo++;
+    while (hi < pts.length-1 && cum[hi+1] - cum[i] <= halfKm) hi++;
+    const lats = [], lngs = [];
+    for (let k = lo; k <= hi; k++) { lats.push(pts[k].lat); lngs.push(pts[k].lng); }
+    out[i].lat = median(lats);
+    out[i].lng = median(lngs);
+  }
+  return out;
+}
+
+// Fehlende Höhenwerte (null) linear über die Distanz interpolieren. Nötig, weil
+// die Ausreißer-Filterung Höhen verwerfen kann (alt=null) und in manchen Tracks
+// ein großer Teil der Höhen fehlt — ohne Interpolation hätte der Median-Filter
+// an diesen Stellen keine Datenbasis und elevGain/Profil blieben löchrig.
+function interpolateAltitude(pts) {
+  const n = pts.length;
+  const known = [];
+  for (let i = 0; i < n; i++) if (pts[i].alt != null) known.push(i);
+  if (known.length < 2) return pts.map(p => p.alt);
+  const cum = cumDistances(pts);
+  const out = new Array(n);
+  let ki = 0;
+  for (let i = 0; i < n; i++) {
+    if (pts[i].alt != null) { out[i] = pts[i].alt; continue; }
+    while (ki < known.length-1 && known[ki+1] < i) ki++;
+    const a = known[ki], b = known[Math.min(ki+1, known.length-1)];
+    if (i <= known[0]) out[i] = pts[known[0]].alt;
+    else if (i >= known[known.length-1]) out[i] = pts[known[known.length-1]].alt;
+    else {
+      const span = cum[b] - cum[a];
+      const t = span > 0 ? (cum[i] - cum[a]) / span : 0;
+      out[i] = pts[a].alt + (pts[b].alt - pts[a].alt) * t;
+    }
+  }
+  return out;
+}
+
+// Distanzbasierter gleitender Median auf der Höhe. Interpoliert zuerst
+// fehlende Werte, glättet dann über das Distanzfenster.
+function smoothAltitudeMedian(pts, windowM) {
+  if (pts.length < 5) return pts.map(p => ({...p}));
+  const alt = interpolateAltitude(pts);
+  const cum = cumDistances(pts);
+  const halfKm = (windowM / 2) / 1000;
+  const out = pts.map((p,i) => ({...p, alt: alt[i]}));
+  let lo = 0, hi = 0;
+  for (let i = 0; i < pts.length; i++) {
+    while (lo < i && cum[i] - cum[lo] > halfKm) lo++;
+    while (hi < pts.length-1 && cum[hi+1] - cum[i] <= halfKm) hi++;
+    const window = [];
+    for (let k = lo; k <= hi; k++) window.push(alt[k]);
+    out[i].alt = median(window);
+  }
+  return out;
+}
+
+// Bequemer Gesamt-Durchlauf: erst Ausreißer (einzelne Sprünge), dann Glättung
+// (flächiges Rauschen), für Position und Höhe. Reihenfolge bewusst so —
+// grobe Einzelausreißer erst raus, damit sie den Median nicht mit in die
+// Nachbarschaft ziehen. Gibt {points, fixedCount} zurück.
+function cleanTrackPoints(rawPoints, type) {
+  const pos = filterPositionOutliers(rawPoints, type);
+  const alt = filterAltitudeOutliers(pos.points);
+  const fixedCount = pos.fixedCount + alt.fixedCount;
+  let pts = smoothPositionMedian(alt.points, SMOOTH_POS_M);
+  pts = smoothAltitudeMedian(pts, SMOOTH_ALT_M);
+  return { points: pts, fixedCount };
+}
+
 function buildDerivedTrackFields(rawPoints, type) {
   const speedCap = speedCapFor(type || 'other');
   let prevPt = null, cumDist = 0, elevGain = 0, lastSplitKm = 0;
+  // Höhenreferenz mit Hysterese: elevGain wird gegen eine mitgeführte
+  // Referenzhöhe gerechnet, die erst umspringt, wenn sich die Höhe um
+  // ALT_MIN_DELTA vom Referenzwert entfernt hat — NICHT gegen den direkten
+  // Vorgänger. Sonst würde nach der Glättung, wo aufeinanderfolgende Punkte
+  // sich um viel weniger als ALT_MIN_DELTA unterscheiden, jeder einzelne
+  // Anstiegsschritt unter die Schwelle fallen und komplett verworfen werden
+  // (ein 900-m-Anstieg käme fälschlich als ~0 heraus).
+  let refAlt = null;
   const points = [], splits = [];
   const t0 = rawPoints[0].ts;
   rawPoints.forEach(pt => {
@@ -1938,12 +2064,16 @@ function buildDerivedTrackFields(rawPoints, type) {
       const d = haversine(prevPt.lat, prevPt.lng, lat, lng), dt = (ts-prevPt.ts)/1000;
       speed = dt > 0 ? Math.min((d/dt)*3600, speedCap) : 0;
       cumDist += d;
-      if (alt != null && prevPt.alt != null) {
-        const dA = alt - prevPt.alt;
-        if (dA >= ALT_MIN_DELTA) elevGain += dA;
-      }
       const km = Math.floor(cumDist);
       if (km > lastSplitKm) { splits.push({km, elapsed:(ts-t0)/1000}); lastSplitKm = km; }
+    }
+    if (alt != null) {
+      if (refAlt == null) refAlt = alt;
+      const dA = alt - refAlt;
+      if (Math.abs(dA) >= ALT_MIN_DELTA) {
+        if (dA > 0) elevGain += dA; // nur Anstiege zählen
+        refAlt = alt;               // Referenz nachziehen (Hysterese)
+      }
     }
     points.push({lat, lng, ts, speed, alt, altRate:0});
     prevPt = {lat, lng, ts, alt};
@@ -1987,24 +2117,24 @@ function importJSON(event) {
       // Gleicher Ausreißer-Check wie beim GPX-Import — betrifft nur Tracks,
       // die selbst schon Ausreißer enthalten (z.B. exportiert aus einer
       // älteren App-Version ohne Live-Filter). Unauffällige Imports bleiben
-      // unangetastet, nur bei tatsächlichem Fund werden die abgeleiteten
-      // Felder (speed/dist/elevGain/splits) neu berechnet. Position und
-      // Höhe sind unabhängige Kanäle, deshalb zwei getrennte Filter.
+      // Vollständige Bereinigung: erst einzelne Ausreißer (Sprünge) raus,
+      // dann flächiges GPS-Rauschen glätten (distanzbasierter Median, für
+      // Position und Höhe getrennt). Anders als die reine Ausreißer-Erkennung
+      // läuft die Glättung IMMER — verrauschte Tracks haben oft gar keine
+      // isolierten Sprünge, sondern durchgehende Streuung, die nur die
+      // Glättung auffängt. Deshalb hier nicht mehr an fixedCount>0 gekoppelt.
       const raw = run.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt}));
-      const posResult = filterPositionOutliers(raw, run.type);
-      const altResult = filterAltitudeOutliers(posResult.points);
-      const fixedCount = posResult.fixedCount + altResult.fixedCount;
-      if (fixedCount > 0) {
-        const {points, splits, dist, elevGain} = buildDerivedTrackFields(altResult.points, run.type);
-        run.points = points; run.splits = splits; run.dist = dist; run.elevGain = elevGain;
-      }
+      const cleaned = cleanTrackPoints(raw, run.type);
+      const fixedCount = cleaned.fixedCount;
+      const {points, splits, dist, elevGain} = buildDerivedTrackFields(cleaned.points, run.type);
+      run.points = points; run.splits = splits; run.dist = dist; run.elevGain = elevGain;
 
       // bearing (re)berechnen — kostet nichts, macht importierte Tracks
       // heatmap-/referenztrack-tauglich, egal ob die Quelldatei es schon hatte
       addBearingToRun(run);
       persistRunToIDB(run);
       runs.unshift(run);saveRuns();
-      toast(fixedCount>0 ? `Lauf importiert (${fixedCount} GPS-Ausreißer korrigiert)` : 'Lauf importiert');
+      toast(fixedCount>0 ? `Lauf importiert (geglättet, ${fixedCount} Ausreißer korrigiert)` : 'Lauf importiert (geglättet)');
       renderHistory();
     }catch(err){toast('Fehler: '+err.message);}
   };
@@ -2028,14 +2158,14 @@ function importGPX(event) {
         return {lat,lng,ts,alt};
       });
 
-      // 2. GPS-Ausreißer korrigieren, BEVOR Speed/Distanz/Splits daraus
-      // berechnet werden — sonst fließt ein einzelner Sprung doppelt ein
-      // (einmal raus, einmal zurück) und verzerrt Distanz und Speed-Chart.
-      // Position und Höhe sind unabhängige Kanäle, deshalb zwei getrennte Filter.
-      const posResult = filterPositionOutliers(raw, importType);
-      const altResult = filterAltitudeOutliers(posResult.points);
-      const fixedCount = posResult.fixedCount + altResult.fixedCount;
-      const {points, splits, dist:cumDist, elevGain} = buildDerivedTrackFields(altResult.points, importType);
+      // 2. GPS-Bereinigung BEVOR Speed/Distanz/Splits berechnet werden —
+      // sonst fließt Rauschen/Ausreißer doppelt ein und verzerrt Distanz und
+      // Speed-Chart. cleanTrackPoints macht beides: einzelne Sprünge raus +
+      // flächige Rausch-Glättung (distanzbasierter Median, Position & Höhe
+      // getrennt). Glättung läuft immer, nicht nur bei gefundenen Ausreißern.
+      const cleaned = cleanTrackPoints(raw, importType);
+      const fixedCount = cleaned.fixedCount;
+      const {points, splits, dist:cumDist, elevGain} = buildDerivedTrackFields(cleaned.points, importType);
 
       const run={id:points[0].ts,startTs:points[0].ts,duration:(points[points.length-1].ts-points[0].ts),dist:cumDist,elevGain,points,splits,source:'gpx',name:xml.querySelector('name')?.textContent||file.name,type:importType};
       if(runs.find(x=>x.id===run.id)){ toast('Track bereits vorhanden'); return; }
@@ -2043,8 +2173,8 @@ function importGPX(event) {
       persistRunToIDB(run);
       runs.unshift(run);saveRuns();
       toast(fixedCount>0
-        ? `GPX importiert: ${cumDist.toFixed(2)} km (${fixedCount} GPS-Ausreißer korrigiert)`
-        : `GPX importiert: ${cumDist.toFixed(2)} km`);
+        ? `GPX importiert: ${cumDist.toFixed(2)} km (geglättet, ${fixedCount} Ausreißer)`
+        : `GPX importiert: ${cumDist.toFixed(2)} km (geglättet)`);
       renderHistory();
     }catch(err){toast('GPX-Fehler: '+err.message);}
   };
@@ -2840,23 +2970,67 @@ function compareColor(pct) {
 // bereits gezeichnete Segmente bleiben unangetastet. Das verhindert, dass die
 // App bei langen Läufen immer langsamer wird (vorher: kompletter Neuaufbau
 // bei jedem GPS-Punkt → O(n²) über die Laufzeit, führte zum Einfrieren).
-function updateCompareSpur(points) {
+// Mindestlänge eines Farbsegments in der Live-Vergleichsspur. Schwankungen
+// unterhalb dessen sind kein echtes Signal — die Heatmap-Referenzpunkte
+// selbst liegen nur alle ~50m (HEATMAP_STEP), engmaschiger einzufärben
+// suggeriert eine Präzision, die die Vergleichsdaten gar nicht hergeben.
+const COMPARE_CHUNK_M = 100;
+
+// Inkrementeller gleitender Geschwindigkeits-Mittelwert für die Live-
+// Vergleichsspur: läuft mit onGPS() mit und hält den 20s-Schnitt O(1) pro
+// neuem Punkt aktuell (Zwei-Zeiger-Fenster wie slidingWindowAvg(), nur
+// Punkt-für-Punkt statt in einem Rutsch über ein fertiges Array). Ersetzt
+// den vorherigen rollingAvg(points.slice(0,...)), der bei jedem Chunk
+// erneut von vorne über die komplette bisherige Strecke gemittelt hat —
+// der eigentliche Grund, warum die Spur bisher nur alle 5 Punkte statt
+// laufend eingefärbt wurde.
+let compareWinStart = 0, compareWinSum = 0, compareWinLastIdx = -1;
+
+function advanceCompareWindow(points, uptoIdx) {
+  for (let i = compareWinLastIdx + 1; i <= uptoIdx; i++) {
+    if (i > 0 && (points[i].ts - points[i-1].ts) > GPS_GAP_SEC*1000) {
+      compareWinStart = i; compareWinSum = 0; // Lücke: Fenster zurücksetzen
+    }
+    compareWinSum += points[i].speed || 0;
+    const cutoff = points[i].ts - SPEED_AVG_SEC*1000;
+    while (compareWinStart < i && points[compareWinStart].ts < cutoff) {
+      compareWinSum -= points[compareWinStart].speed || 0;
+      compareWinStart++;
+    }
+  }
+  compareWinLastIdx = uptoIdx;
+  const n = uptoIdx - compareWinStart + 1;
+  return n > 0 ? compareWinSum / n : 0;
+}
+
+function updateCompareSpur(points, flush) {
   if (!heatmapActive || !tMap) return;
 
   // Standard-Spur unsichtbar machen (einmalig, kein Performance-Problem bei Wiederholung)
   if (tCurrentLine) tCurrentLine.setStyle({opacity:0});
 
-  const SEG = 5;
-  // Weiterzeichnen ab dem letzten fertig gezeichneten Segment
+  // Weiterzeichnen ab dem letzten fertig gezeichneten Punkt, in Schritten
+  // von mindestens COMPARE_CHUNK_M Metern statt einer festen Punktanzahl —
+  // dadurch ist die Segmentlänge unabhängig vom Tempo (schnell = wenige
+  // Punkte pro 100m, langsam = viele) immer räumlich gleich fein.
   let i = compareSegDoneIdx;
-  for (; i < points.length - 1; i += SEG) {
-    const chunk = points.slice(i, Math.min(i + SEG + 1, points.length));
-    if (chunk.length < 2) break; // noch nicht genug neue Punkte für ein volles Segment
-    const midOffset = Math.floor(chunk.length/2);
-    const mid = chunk[midOffset];
+  while (i < points.length - 1) {
+    let distM = 0, j = i;
+    while (j < points.length - 1 && distM < COMPARE_CHUNK_M) {
+      distM += haversine(points[j].lat, points[j].lng, points[j+1].lat, points[j+1].lng) * 1000;
+      j++;
+    }
+    // Noch nicht genug neue Distanz für ein volles Segment: abwarten, außer
+    // beim expliziten Flush (z.B. Lauf beendet — Rest trotzdem einfärben)
+    if (!flush && j >= points.length - 1 && distM < COMPARE_CHUNK_M) break;
+    if (j <= i) break;
+
+    const chunk = points.slice(i, j+1);
+    const midIdxAbs = i + Math.floor(chunk.length/2);
+    const mid = points[midIdxAbs];
     // Geglättete Geschwindigkeit am Segment-Mittelpunkt, damit der Vergleich
     // nicht Rauschen gegen Rauschen hält (Index speichert ebenfalls geglättet)
-    const midSpeed = rollingAvg(points.slice(0, i + midOffset + 1), 'speed', SPEED_AVG_SEC);
+    const midSpeed = advanceCompareWindow(points, midIdxAbs);
     const match = mid.bearing != null
       ? matchSpeed(mid.lat, mid.lng, mid.bearing, midSpeed, activityType)
       : null;
@@ -2865,7 +3039,8 @@ function updateCompareSpur(points) {
     layer.addTo(tMap);
     compareSegments.push(layer);
     if (match) lastCompareMatch = match;
-    compareSegDoneIdx = i + SEG;
+    compareSegDoneIdx = j;
+    i = j;
   }
 
   // Label updaten
@@ -2881,6 +3056,7 @@ function resetCompareSpur() {
   compareSegments.forEach(l => { if (tMap) tMap.removeLayer(l); });
   compareSegments = [];
   compareSegDoneIdx = 0;
+  compareWinStart = 0; compareWinSum = 0; compareWinLastIdx = -1;
 }
 
 // ══════════════════════════════════════════════
@@ -3014,12 +3190,11 @@ async function cleanCurrentDetailTrack() {
   if (!detailRun || !detailRun.points || detailRun.points.length < 5) { toast('Zu wenig Punkte'); return; }
 
   const raw = detailRun.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt}));
-  const posResult = filterPositionOutliers(raw, detailRun.type || 'other');
-  const altResult = filterAltitudeOutliers(posResult.points);
-  const fixedCount = posResult.fixedCount + altResult.fixedCount;
-  if (fixedCount === 0) { toast('Keine GPS-Ausreißer gefunden'); return; }
-  const cleanedRaw = altResult.points;
+  const cleaned = cleanTrackPoints(raw, detailRun.type || 'other');
+  const fixedCount = cleaned.fixedCount;
+  const cleanedRaw = cleaned.points;
 
+  const distBefore = detailRun.dist;
   const {points, splits, dist, elevGain} = buildDerivedTrackFields(cleanedRaw, detailRun.type || 'other');
   detailRun.points = points;
   detailRun.splits = splits;
@@ -3044,7 +3219,8 @@ async function cleanCurrentDetailTrack() {
   } catch(e) { console.warn('Bereinigen: IDB-Fehler', e); }
 
   saveRuns(); // Metadaten-Cache: dist/elevGain haben sich ggf. leicht geändert
-  toast(`${fixedCount} GPS-Ausreißer korrigiert ✓`);
+  const dDist = distBefore - detailRun.dist;
+  toast(`Geglättet ✓ ${fixedCount>0?fixedCount+' Ausreißer · ':''}${dDist>0.02?'−'+dDist.toFixed(2)+' km Rauschen':''}`.trim());
   initDetailView(detailRun); // Karte/Slider/Kennzahlen mit korrigierten Daten neu zeichnen
   renderHistory();
 }
