@@ -35,6 +35,9 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 /* ── OFFLINE ── */
 #offlineBadge { display:none; position:fixed; top:8px; right:8px; z-index:8999; background:var(--warn); color:#fff; font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
 body.offline #offlineBadge { display:block; }
+#gpsWarnBadge { display:none; position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:8999; background:var(--warn); color:#fff; font-size:12px; font-weight:700; padding:5px 12px; border-radius:20px; box-shadow:0 2px 8px rgba(0,0,0,.3); align-items:center; gap:6px; }
+#gpsWarnBadge.show { display:flex; }
+#gpsWarnBadge .tri { font-size:14px; }
 
 /* ── NAV ── */
 #nav { position:fixed; bottom:0; left:0; right:0; z-index:1000; background:var(--surface); border-top:1px solid var(--border); display:flex; padding-bottom:env(safe-area-inset-bottom); }
@@ -377,6 +380,7 @@ body.offline #offlineBadge { display:block; }
 <body>
 
 <div id="offlineBadge">✈ Offline</div>
+<div id="gpsWarnBadge"><span class="tri">⚠️</span><span id="gpsWarnText">GPS-Empfang schwach</span></div>
 <div id="installBanner">
   <div class="install-text"><strong>Als App installieren</strong>Offline nutzbar · GPS immer verfügbar</div>
   <button id="installBannerBtn">Installieren</button>
@@ -919,6 +923,23 @@ function calcWatt(speedKmh, vVertMs) {
 const SPEED_AVG_SEC = 20;
 const ALT_AVG_SEC   = 60;   // 1 Minute Glättungsfenster für Höhe
 const GPS_GAP_SEC   = 8;    // GPS-Lücke ab dieser Dauer: Fenster wird zurückgesetzt
+// GPS-Empfangsüberwachung: ab welcher gemeldeten Ungenauigkeit (Meter) ein
+// Fix als "schwach" gilt, und wie lange das am Stück anhalten muss, bevor
+// (a) das Warndreieck erscheint und (b) automatisch eine frische GPS-Sitzung
+// angefordert wird. Der Auto-Reacquire ahmt das nach, was ein manueller
+// Stop/Start bewirkt: er zwingt den Chip zu einer neuen Satellitensuche und
+// löst ihn aus einer verklemmten Mehrwege-Lösung — ohne die Aufzeichnung zu
+// unterbrechen (der Track läuft weiter, nur watchPosition wird erneuert).
+const GPS_ACC_WARN_M    = 30;    // ab hier gilt ein Fix als schwach
+const GPS_WARN_AFTER_MS = 12000; // so lange anhaltend schwach -> Warndreieck
+const GPS_REACQ_AFTER_MS= 25000; // so lange anhaltend schwach -> Sitzung neu
+const GPS_REACQ_COOLDOWN= 60000; // frühestens wieder nach dieser Zeit
+let gpsPoorSince = 0;            // seit wann ununterbrochen schwach (0 = gut)
+let lastReacquire = 0;          // Zeitpunkt des letzten Auto-Reacquire
+// Reacquire auch bei anhaltendem Doppler-Positions-Widerspruch (unabhängig von
+// accuracy): so viele divergente Fixes in Folge lösen eine frische Sitzung aus.
+const GPS_DIVERGE_REACQ_COUNT = 8;
+let gpsDivergentStreak = 0;
 const WATT_INST_SEC   = 20; // Fenster für die Momentanleistung (Speed UND Höhe gemeinsam)
 const WATT_SMOOTH_SEC = 30; // Glättung der fertigen Leistung
 const ALT_MIN_DELTA = 2;
@@ -1360,9 +1381,22 @@ function startRun() {
   updateToggleBtn();
   document.getElementById('btnSave').disabled=true;
   timerInt=setInterval(updateTimerUI,1000);
-  watchId=navigator.geolocation.watchPosition(onGPS,onGPSErr,{enableHighAccuracy:true,maximumAge:2000,timeout:15000});
+  watchId=navigator.geolocation.watchPosition(onGPS,onGPSErr,{enableHighAccuracy:true,maximumAge:0,timeout:15000});
   initTrackerMap();
   if('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
+}
+
+// Fordert eine frische GPS-Sitzung an, ohne die laufende Aufzeichnung zu
+// unterbrechen. Entspricht einem manuellen Stop/Start allein für den
+// GPS-Empfang: clearWatch + neues watchPosition zwingt den Chip zur
+// Neuakquise. Der Track (currentRun) bleibt unangetastet.
+function reacquireGPS() {
+  if (!navigator.geolocation || watchId == null) return;
+  navigator.geolocation.clearWatch(watchId);
+  watchId = navigator.geolocation.watchPosition(onGPS, onGPSErr,
+    {enableHighAccuracy:true, maximumAge:0, timeout:15000});
+  lastReacquire = Date.now();
+  toast('GPS-Empfang schwach – Signal wird neu gesucht');
 }
 function stopRun() {
   running=false; elapsed+=Date.now()-startTime;
@@ -1373,6 +1407,8 @@ function stopRun() {
   if(currentRun&&currentRun.points.length>2) document.getElementById('btnSave').disabled=false;
   ['gpsDot','gpsDotFull'].forEach(id=>{const el=document.getElementById(id);if(el)el.className='gps-dot';});
   ['gpsLabel','gpsLabelFull'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='Pausiert';});
+  gpsPoorSince = 0;
+  const wb = document.getElementById('gpsWarnBadge'); if (wb) wb.classList.remove('show');
 }
 function updateToggleBtn() {
   const btn = document.getElementById('btnToggle');
@@ -1440,7 +1476,7 @@ document.addEventListener('visibilitychange', () => {
 
       // GPS watch neu starten falls Chrome ihn gekillt hat
       if (watchId == null && running) {
-        watchId = navigator.geolocation.watchPosition(onGPS, onGPSErr, {enableHighAccuracy:true, maximumAge:2000, timeout:15000});
+        watchId = navigator.geolocation.watchPosition(onGPS, onGPSErr, {enableHighAccuracy:true, maximumAge:0, timeout:15000});
       }
 
       // Timer-Interval neu starten falls verloren
@@ -1468,6 +1504,30 @@ function onGPS(pos) {
   // GPS Status
   const accText=Math.round(accuracy)+'m';
   ['gpsAcc','gpsAccFull'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=accText;});
+
+  // Empfangsqualität über die ZEIT verfolgen, nicht nur den einzelnen Fix:
+  // ein kurzer Ausreißer ist normal, erst anhaltend schlechte Genauigkeit
+  // ist ein echtes Problem (und der Fall, wo ein Neustart der GPS-Sitzung hilft).
+  const nowMs = Date.now();
+  const warnBadge = document.getElementById('gpsWarnBadge');
+  if (accuracy > GPS_ACC_WARN_M) {
+    if (!gpsPoorSince) gpsPoorSince = nowMs;
+    const poorFor = nowMs - gpsPoorSince;
+    // Warndreieck nach anhaltend schwachem Empfang
+    if (poorFor >= GPS_WARN_AFTER_MS && warnBadge) {
+      document.getElementById('gpsWarnText').textContent = `GPS-Empfang schwach (±${accText})`;
+      warnBadge.classList.add('show');
+    }
+    // Auto-Reacquire nach noch längerem schwachem Empfang (mit Cooldown,
+    // damit es nicht in Dauerschleife neu startet), nur während Aufzeichnung
+    if (running && poorFor >= GPS_REACQ_AFTER_MS && (nowMs - lastReacquire) >= GPS_REACQ_COOLDOWN) {
+      reacquireGPS();
+      gpsPoorSince = nowMs; // Zähler zurücksetzen, frischer Sitzung eine Chance geben
+    }
+  } else {
+    gpsPoorSince = 0;
+    if (warnBadge) warnBadge.classList.remove('show');
+  }
 
   if (accuracy>40) {
     ['gpsDot','gpsDotFull'].forEach(id=>{const el=document.getElementById(id);if(el)el.className='gps-dot bad';});
@@ -1569,9 +1629,50 @@ function onGPS(pos) {
     ? calcBearing(currentRun.lastPos.lat, currentRun.lastPos.lng, lat, lng)
     : 0;
 
+  // ── Adaptive Distanz: Position ODER Doppler, je nach Übereinstimmung ──
+  // Position und Doppler-Geschwindigkeit sind unabhängige Kanäle. Wo sie
+  // übereinstimmen (gutes GPS), ist die Positionsdistanz der Goldstandard —
+  // Doppler unterschätzt dort systematisch ~5% (misst nur entlang der
+  // Sichtlinie, verpasst Kurven/Beschleunigung zwischen zwei 1-Hz-Fixes).
+  // Wo sie STARK divergieren (verrauschte Position, Mehrwegeausbreitung), ist
+  // die Positionsdistanz aufgebläht (Zickzack) und die Doppler-Distanz das
+  // kleinere Übel. Belegt an einem Hin-und-zurück-Track auf derselben Straße:
+  // Positionsdistanz wich zwischen beiden Richtungen um 1682 m ab, Doppler
+  // nur um 248 m — Doppler ist dort fast 7× näher an der Wahrheit.
+  // Live-Distanz: Positionsschritt (km). Die adaptive Doppler-Umschaltung
+  // braucht ein Fenster in BEIDE Richtungen (siehe buildDerivedTrackFields),
+  // das live nicht verfügbar ist — daher wird die Distanz erst beim Speichern/
+  // Bereinigen nachträglich adaptiv korrigiert. Live bleibt Position.
   currentRun.dist+=d;
   currentRun.points.push({lat,lng,ts,speed:rawSpeed,alt:altToUse,altRate:altRateVal,bearing});
   currentRun.lastPos={lat,lng,ts};
+
+  // Reacquire-Signal: anhaltende Positions/Doppler-Divergenz über ein
+  // RÜCKWÄRTS-Fenster (nur Vergangenheit ist live bekannt). Ein zuverlässigeres
+  // "hier stimmt was nicht"-Signal als die accuracy-Selbsteinschätzung des
+  // Chips (die optimistisch lügen kann, wenn er in einer Mehrwege-Lösung
+  // festhängt). Genug Divergenz → frische GPS-Sitzung (mit Cooldown).
+  if (deviceSpeedKmh != null && running) {
+    const pts = currentRun.points;
+    let pd = 0, dd = 0, k = pts.length - 1;
+    while (k > 0 && (ts - pts[k].ts) < 30000) {
+      const ddt = (pts[k].ts - pts[k-1].ts)/1000;
+      pd += haversine(pts[k-1].lat, pts[k-1].lng, pts[k].lat, pts[k].lng);
+      dd += (pts[k].speed/3.6) * ddt / 1000;
+      k--;
+    }
+    const windowDivergent = dd > 0.05 && pd/dd > DIVERGE_RATIO;
+    if (windowDivergent) {
+      gpsDivergentStreak = (gpsDivergentStreak || 0) + 1;
+      if (gpsDivergentStreak >= GPS_DIVERGE_REACQ_COUNT &&
+          (Date.now() - lastReacquire) >= GPS_REACQ_COOLDOWN) {
+        reacquireGPS();
+        gpsDivergentStreak = 0;
+      }
+    } else {
+      gpsDivergentStreak = 0;
+    }
+  }
 
   // Geschwindigkeitsvergleich (nur wenn Heatmap aktiv) – Matching passiert
   // intern in updateCompareSpur() pro neuem Segment, nicht hier direkt
@@ -2044,9 +2145,41 @@ function cleanTrackPoints(rawPoints, type) {
   return { points: pts, fixedCount };
 }
 
+// Markiert Punkte, die in einem Fenster anhaltender Positions/Doppler-
+// Divergenz liegen. Fensterbasiert (nicht pro Punkt), weil auf 1-Hz-Ebene
+// JEDER Track viel Quantisierungs-Zappeln hat — erst über ein ~30s-Fenster
+// gemittelt trennt sich echtes GPS-Rauschen (anhaltend aufgeblähte
+// Positionsdistanz ggü. Doppler) von normalem Rauschen. An echten Tracks
+// getestet: sauberer Track 0% markiert, verrauschter ~2% — die punktweise
+// Variante markierte dagegen bei beiden ~10% (nicht trennscharf).
+function markDivergentWindows(pts, windowSec, threshRatio) {
+  const n = pts.length;
+  const divergent = new Array(n).fill(false);
+  for (let i = 1; i < n; i++) {
+    if (pts[i].speed == null) continue;
+    let ws = i, we = i;
+    while (ws > 0 && (pts[i].ts - pts[ws].ts) < windowSec*500) ws--;
+    while (we < n-1 && (pts[we].ts - pts[i].ts) < windowSec*500) we++;
+    let pd = 0, dd = 0;
+    for (let k = ws+1; k <= we; k++) {
+      const ddt = (pts[k].ts - pts[k-1].ts)/1000;
+      pd += haversine(pts[k-1].lat, pts[k-1].lng, pts[k].lat, pts[k].lng);
+      dd += pts[k].speed != null ? (pts[k].speed/3.6 * ddt / 1000) : 0;
+    }
+    if (dd > 0.001 && pd/dd > threshRatio) divergent[i] = true;
+  }
+  return divergent;
+}
+const DIVERGE_WINDOW_SEC = 30;
+const DIVERGE_RATIO      = 1.4;
+
 function buildDerivedTrackFields(rawPoints, type) {
   const speedCap = speedCapFor(type || 'other');
   let prevPt = null, cumDist = 0, elevGain = 0, lastSplitKm = 0;
+  // Vorabdurchlauf: welche Punkte liegen in einem verrauschten Fenster?
+  // Dort wird die Doppler-Distanz statt der (aufgeblähten) Positionsdistanz
+  // verwendet. Braucht speed; ohne Doppler-Daten ist alles false.
+  const divergent = markDivergentWindows(rawPoints, DIVERGE_WINDOW_SEC, DIVERGE_RATIO);
   // Höhenreferenz mit Hysterese: elevGain wird gegen eine mitgeführte
   // Referenzhöhe gerechnet, die erst umspringt, wenn sich die Höhe um
   // ALT_MIN_DELTA vom Referenzwert entfernt hat — NICHT gegen den direkten
@@ -2057,13 +2190,29 @@ function buildDerivedTrackFields(rawPoints, type) {
   let refAlt = null;
   const points = [], splits = [];
   const t0 = rawPoints[0].ts;
-  rawPoints.forEach(pt => {
+  rawPoints.forEach((pt, idx) => {
     const {lat,lng,ts,alt} = pt;
     let speed = 0;
     if (prevPt) {
       const d = haversine(prevPt.lat, prevPt.lng, lat, lng), dt = (ts-prevPt.ts)/1000;
-      speed = dt > 0 ? Math.min((d/dt)*3600, speedCap) : 0;
-      cumDist += d;
+      // Geschwindigkeit: die ORIGINALE (vom GPS-Chip Doppler-gemessene) speed
+      // beibehalten, wenn vorhanden — eigener, positions-UNABHÄNGIGER
+      // Messkanal, bleibt sauber auch bei starkem Positionsrauschen. Nur ohne
+      // vorhandene speed (z.B. mancher GPX-Import) aus Position ableiten.
+      const hasDoppler = pt.speed != null;
+      if (hasDoppler) {
+        speed = Math.min(pt.speed, speedCap);
+      } else {
+        speed = dt > 0 ? Math.min((d/dt)*3600, speedCap) : 0;
+      }
+      // Adaptive Distanz: nur in anhaltend divergenten Fenstern die
+      // Doppler-Distanz nehmen (dort ist die Position durch Rauschen
+      // aufgebläht). haversine() liefert KM, Doppler ebenso.
+      let dStep = d;
+      if (hasDoppler && divergent[idx] && dt > 0 && dt <= GPS_GAP_SEC) {
+        dStep = (pt.speed/3.6) * dt / 1000;
+      }
+      cumDist += dStep;
       const km = Math.floor(cumDist);
       if (km > lastSplitKm) { splits.push({km, elapsed:(ts-t0)/1000}); lastSplitKm = km; }
     }
@@ -2123,7 +2272,7 @@ function importJSON(event) {
       // läuft die Glättung IMMER — verrauschte Tracks haben oft gar keine
       // isolierten Sprünge, sondern durchgehende Streuung, die nur die
       // Glättung auffängt. Deshalb hier nicht mehr an fixedCount>0 gekoppelt.
-      const raw = run.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt}));
+      const raw = run.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt, speed:p.speed}));
       const cleaned = cleanTrackPoints(raw, run.type);
       const fixedCount = cleaned.fixedCount;
       const {points, splits, dist, elevGain} = buildDerivedTrackFields(cleaned.points, run.type);
@@ -3189,7 +3338,7 @@ function toSlimRun(run) {
 async function cleanCurrentDetailTrack() {
   if (!detailRun || !detailRun.points || detailRun.points.length < 5) { toast('Zu wenig Punkte'); return; }
 
-  const raw = detailRun.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt}));
+  const raw = detailRun.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt, speed:p.speed}));
   const cleaned = cleanTrackPoints(raw, detailRun.type || 'other');
   const fixedCount = cleaned.fixedCount;
   const cleanedRaw = cleaned.points;
