@@ -921,8 +921,20 @@ function calcWatt(speedKmh, vVertMs) {
   return Math.max(0, Math.round(pAir + pRoll + pSteig));
 }
 const SPEED_AVG_SEC = 20;
-const ALT_AVG_SEC   = 60;   // 1 Minute Glättungsfenster für Höhe
+const ALT_AVG_SEC   = 30;   // Glättungsfenster für hm/h-Anzeige. Von 60s auf
+// 30s verkürzt: das 60s-Fenster brauchte bis zu 120s durchgehende Historie
+// und erholte sich nach einer Lücke viel langsamer als der Watt-Wert (der
+// nur ein 20s-Fenster nutzt) — dadurch wirkte hm/h instabiler als das daraus
+// abgeleitete Watt. 30s ist responsiver und lücken-robuster, bei nur leicht
+// mehr Zappeln.
 const GPS_GAP_SEC   = 8;    // GPS-Lücke ab dieser Dauer: Fenster wird zurückgesetzt
+// Aber: nur ECHTE Pausen (lange Lücken) sollen die Mittelungsfenster
+// zurücksetzen. Kurze Geräte-Aussetzer (das GPS liefert mal 8-30 s nichts,
+// obwohl man normal weiterfährt) dürfen die Historie NICHT wegwerfen — sonst
+// fällt die hm/h-Anzeige nach jedem Aussetzer auf 0, obwohl man stetig
+// bergauf fährt. Bis zu dieser Dauer wird die Lücke überbrückt (die Höhe
+// davor bleibt gültige Referenz); darüber gilt es als echte Pause.
+const GAP_BRIDGE_SEC = 45;
 // GPS-Empfangsüberwachung: ab welcher gemeldeten Ungenauigkeit (Meter) ein
 // Fix als "schwach" gilt, und wie lange das am Stück anhalten muss, bevor
 // (a) das Warndreieck erscheint und (b) automatisch eine frische GPS-Sitzung
@@ -1011,8 +1023,11 @@ function speedColor(kmh,mn,mx){ const t=mx>mn?Math.max(0,Math.min(1,(kmh-mn)/(mx
 // Fenster (Speed, Höhe, Steigung) über eine Signalunterbrechung hinweg
 // rechnen und dadurch unsinnige Ausreißer erzeugen (z.B. HM/h nach Tunnel).
 function trimAfterLastGap(points) {
+  // Nur bei ECHTEN Pausen (lange Lücke) die Historie abschneiden. Kurze
+  // Aussetzer werden überbrückt — sonst Reset der hm/h-Anzeige auf 0 nach
+  // jedem kurzen GPS-Loch mitten im Anstieg.
   for (let i = points.length - 1; i > 0; i--) {
-    if (points[i].ts - points[i-1].ts > GPS_GAP_SEC * 1000) {
+    if (points[i].ts - points[i-1].ts > GAP_BRIDGE_SEC * 1000) {
       return points.slice(i);
     }
   }
@@ -1036,9 +1051,8 @@ function slidingWindowAvg(pts, field, windowSec) {
   const out = new Array(pts.length).fill(0);
   let start = 0, sum = 0;
   for (let i = 0; i < pts.length; i++) {
-    if (i > 0 && (pts[i].ts - pts[i-1].ts) > GPS_GAP_SEC*1000) {
-      // Lücke: Fenster zurücksetzen, wie trimAfterLastGap() es für den
-      // Einzelaufruf tun würde
+    if (i > 0 && (pts[i].ts - pts[i-1].ts) > GAP_BRIDGE_SEC*1000) {
+      // Nur echte Pause: Fenster zurücksetzen, wie trimAfterLastGap()
       start = i; sum = 0;
     }
     sum += pts[i][field] || 0;
@@ -1554,9 +1568,17 @@ function onGPS(pos) {
 
   const last=currentRun.lastPos;
   const d=haversine(last.lat,last.lng,lat,lng);
-  if(d<0.003) return;
-
   const dtSec = (ts-last.ts)/1000;
+  // Punkt-Annahme: früher galt hart "d < 3 m → verwerfen". Das war beim
+  // Laufen und langsamer Bergauffahrt fatal — bei 6-10 km/h liegt jeder
+  // 1-Sekunden-Punkt unter 3 m und wäre komplett verworfen worden, was
+  // künstliche Lücken erzeugt (→ hm/h-Reset) und die Strecke verkürzt.
+  // Jetzt zeitbasiert: einen Punkt behalten, sobald ENTWEDER ~3 m Distanz
+  // ODER ~2 s seit dem letzten behaltenen Punkt vergangen sind. Damit bleibt
+  // bei jeder echten Bewegung die 1-2s-Auflösung erhalten; nur echtes
+  // Dauer-Stillstehen (kaum Distanz UND kaum Zeit) wird ausgedünnt.
+  if (d < 0.003 && dtSec < 2) return;
+
   const speedCap = speedCapFor(activityType);
 
   // ── GPS-Ausreißer-Erkennung (live, einseitig — wir kennen nur die
@@ -1597,22 +1619,15 @@ function onGPS(pos) {
   // weit jenseits von allem, was ein Mensch antreiben kann). Anders als bei
   // der Position verwerfen wir hier NUR den Höhenwert dieses Punkts — Lat/
   // Lng/Speed sind ein unabhängiger Kanal und bleiben gültig.
-  let altToUse = altitude;
-  if(altitude!=null&&currentRun.lastAlt!=null){
-    const dAlt=altitude-currentRun.lastAlt;
-    const altRateImplied = dtSec>0 ? Math.abs(dAlt/dtSec)*3600 : 0;
-
-    if (altRateImplied > ALT_SPIKE_MH * OUTLIER_LIVE_FACTOR) {
-      currentRun.altOutlierStreak = (currentRun.altOutlierStreak || 0) + 1;
-      if (currentRun.altOutlierStreak <= 5) {
-        altToUse = null; // weder in elevGain zählen noch dauerhaft speichern
-      } else {
-        currentRun.altOutlierStreak = 0; // Sicherheitsventil: doch akzeptieren (echte Höhenänderung)
-      }
-    } else {
-      currentRun.altOutlierStreak = 0;
-    }
-  }
+  // Höhe wird live ROH gespeichert. Der frühere Live-Ausreißer-Filter
+  // (verwirf Höhe wenn Vertikalrate > Schwelle) hat sich als schädlich
+  // erwiesen: normales GPS-Höhenrauschen (±1-2 m/s von Fix zu Fix ist völlig
+  // üblich) überschritt die Schwelle ständig und ließ ~36% ALLER echten
+  // Höhenwerte als null verwerfen — sichtbar als "jeder zweite Punkt fehlt"
+  // im Höhenprofil. Einzelne echte Ausreißer werden stattdessen nachträglich
+  // im Batch (filterAltitudeOutliers, zweiseitig mit Kontext in beide
+  // Richtungen) sauber erkannt — dort ohne diesen Kollateralschaden.
+  const altToUse = altitude;
 
   let altRateVal=0;
   if(altToUse!=null&&currentRun.lastAlt!=null){
@@ -3137,8 +3152,8 @@ let compareWinStart = 0, compareWinSum = 0, compareWinLastIdx = -1;
 
 function advanceCompareWindow(points, uptoIdx) {
   for (let i = compareWinLastIdx + 1; i <= uptoIdx; i++) {
-    if (i > 0 && (points[i].ts - points[i-1].ts) > GPS_GAP_SEC*1000) {
-      compareWinStart = i; compareWinSum = 0; // Lücke: Fenster zurücksetzen
+    if (i > 0 && (points[i].ts - points[i-1].ts) > GAP_BRIDGE_SEC*1000) {
+      compareWinStart = i; compareWinSum = 0; // nur echte Pause: Fenster zurücksetzen
     }
     compareWinSum += points[i].speed || 0;
     const cutoff = points[i].ts - SPEED_AVG_SEC*1000;
