@@ -2082,6 +2082,18 @@ function median(arr) {
   return s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2;
 }
 
+// Gleitender Median über ein Zahlen-Array (Fenster = 2*half+1). Für die
+// Anzeige-Glättung der interpolierten Höhe in der Detailansicht.
+function smoothArray(arr, half) {
+  const n = arr.length;
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i-half), hi = Math.min(n-1, i+half);
+    out[i] = median(arr.slice(lo, hi+1));
+  }
+  return out;
+}
+
 // Distanzbasierter gleitender Median auf lat/lng. Zwei-Zeiger-Fenster über die
 // kumulierte Distanz, O(n·k) mit kleinem k (Punkte im Fenster).
 function smoothPositionMedian(pts, windowM) {
@@ -2477,15 +2489,30 @@ async function openDetail(id) {
 // ══════════════════════════════════════════════
 //  DETAIL / ANALYSE VIEW
 // ══════════════════════════════════════════════
-let detailRun = null;       // aktuell angezeigte Aktivität
+let detailRun = null;       // aktuell angezeigte Aktivität (ORIGINAL-Referenz)
+let detailPoints = [];      // Anzeige-Punkte (Höhe interpoliert/geglättet), NUR für Auswertung/Darstellung
 let detailSegStart = 0;     // Index erstes Segment-Punkt
 let detailSegEnd = 0;       // Index letzter Segment-Punkt
 let detailCumDist = [];     // gecachte kumulierte Distanzen (einmal berechnet)
 let detailOverlayLayers = []; // farbige Kartensegmente NUR für die aktuelle Slider-Auswahl
 
 function initDetailView(run) {
-  detailRun = run;
-  const pts = run.points;
+  detailRun = run; // bleibt die ORIGINAL-Referenz (für Bereinigen/Ref/Export)
+  // Anzeige-Arbeitskopie der Höhe: fehlende (null) Höhenwerte über die
+  // Distanz interpolieren und leicht glätten — NUR für Auswertung/Darstellung,
+  // ohne die gespeicherten Rohdaten zu verändern. Sonst zeigt das Höhenprofil
+  // die null-Lücken (jeder Track, der noch nicht über "GPS bereinigen" lief).
+  // WICHTIG: in eine SEPARATE Variable, nicht in detailRun — sonst würde ein
+  // späteres Bereinigen/Speichern die interpolierten Anzeigewerte als Rohdaten
+  // nach IDB schreiben und die echten Rohdaten überschreiben.
+  if (run.points && run.points.some(p => p.alt == null)) {
+    const filled = interpolateAltitude(run.points);
+    const smoothed = smoothArray(filled, 2); // leichte Glättung (5-Punkt-Median)
+    detailPoints = run.points.map((p, i) => ({ ...p, alt: smoothed[i] }));
+  } else {
+    detailPoints = run.points;
+  }
+  const pts = detailPoints;
   const totalDist = run.dist;
 
   // Kumulierte Distanzen einmal berechnen und cachen
@@ -2562,7 +2589,7 @@ function getSegmentPoints(pts, distStart, distEnd) {
 }
 
 function updateSegmentAnalysis(distStart, distEnd) {
-  const pts = detailRun.points;
+  const pts = detailPoints;
   const seg = getSegmentPoints(pts, distStart, distEnd);
   if (seg.length < 2) return;
 
@@ -2743,7 +2770,7 @@ function highlightSegmentOnMap(distStart, distEnd) {
   detailOverlayLayers.forEach(l => { try { cMap.removeLayer(l); } catch {} });
   detailOverlayLayers = [];
 
-  const seg = getSegmentPoints(detailRun.points, distStart, distEnd);
+  const seg = getSegmentPoints(detailPoints, distStart, distEnd);
   if (seg.length < 2) return;
 
   // Vergleich zu früheren Fahrten an denselben Stellen, gleiche Skala wie
