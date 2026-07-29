@@ -231,6 +231,7 @@ body.offline #offlineBadge { display:block; }
 .seg-chart-title { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; display:flex; justify-content:space-between; }
 #segSpeedCanvas { width:100%; height:60px; display:block; margin-bottom:4px; }
 #segAltCanvas   { width:100%; height:44px; display:block; }
+#segWattCanvas  { width:100%; height:44px; display:block; }
 
 /* Segment-Kennzahlen */
 .seg-stats { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:12px; }
@@ -569,17 +570,15 @@ body.offline #offlineBadge { display:block; }
         <span id="segAltInfo" style="color:var(--purple)"></span>
       </div>
       <canvas id="segAltCanvas"></canvas>
+      <div class="seg-chart-title" id="segWattTitle" style="margin-top:8px;display:none">
+        <span>Leistung</span>
+        <span id="segWattInfo" style="color:#f59e0b"></span>
+      </div>
+      <canvas id="segWattCanvas" style="display:none"></canvas>
     </div>
 
     <!-- Kennzahlen -->
     <div class="seg-stats" id="segStats"></div>
-
-    <!-- Watt-Intensität -->
-    <div class="intensity-wrap" id="intensityWrap" style="display:none">
-      <div class="intensity-title">Leistungsverteilung (Watt)</div>
-      <div class="intensity-bars" id="intensityBars"></div>
-      <div style="display:flex;gap:4px;margin-top:4px" id="intensityLabels"></div>
-    </div>
 
     <!-- Vergleich mit früheren Tracks -->
     <div class="seg-compare-wrap" id="segCompareWrap" style="display:none">
@@ -2682,38 +2681,50 @@ function updateSegmentAnalysis(distStart, distEnd) {
     <div class="seg-stat"><div class="seg-stat-val">${gradient.toFixed(1)}%</div><div class="seg-stat-lbl">Ø Steigung</div></div>
   `;
 
-  // Watt-Intensitätsverteilung (nur Radfahren)
-  const intensityWrap = document.getElementById('intensityWrap');
-  if (isBike && wattsInSeg.length > 0) {
-    intensityWrap.style.display = '';
-    const bands = [{max:100,lbl:'<100',color:'#5a6580'},{max:200,lbl:'100-200',color:'#3b82f6'},
-                   {max:300,lbl:'200-300',color:'#00e5a0'},{max:400,lbl:'300-400',color:'#eab308'},
-                   {max:Infinity,lbl:'>400',color:'#ef4444'}];
-    const counts = bands.map(b => wattsInSeg.filter(w => w < b.max && w >= (b === bands[0] ? 0 : bands[bands.indexOf(b)-1].max)).length);
-    const total = wattsInSeg.length;
-    const maxCount = Math.max(...counts, 1);
-    document.getElementById('intensityBars').innerHTML = counts.map((n,i) =>
-      `<div class="intensity-bar-wrap">
-        <div class="intensity-pct">${Math.round(n/total*100)}%</div>
-        <div class="intensity-bar" style="height:${Math.round(n/maxCount*36)+4}px;background:${bands[i].color}"></div>
-       </div>`).join('');
-    document.getElementById('intensityLabels').innerHTML = bands.map((b,i) =>
-      `<div class="intensity-lbl" style="flex:1;font-size:8px;color:${bands[i].color}">${b.lbl}</div>`).join('');
-  } else {
-    intensityWrap.style.display = 'none';
+  // Watt pro Punkt (nur Radfahren) — für den Leistungs-Graph über der Strecke.
+  // 1:1 zu seg ausgerichtet (gleitendes 20s-Fenster wie in onGPS/Ø-Watt),
+  // ersetzt das frühere Histogramm: Leistung wird jetzt als Funktion der
+  // Strecke gezeigt, wie Geschwindigkeit und Höhe.
+  let wattSeries = null;
+  if (isBike && seg.length > 4) {
+    wattSeries = new Array(seg.length).fill(0);
+    const WSEC = 20;
+    for (let i = 0; i < seg.length; i++) {
+      const tCut = seg[i].ts - WSEC*1000;
+      let j = i;
+      while (j > 0 && seg[j].ts >= tCut) j--;
+      const win = seg.slice(j, i+1);
+      const vAvg = win.reduce((s,p)=>s+(p.speed||0),0)/win.length;
+      const winA = win.filter(p=>p.alt!=null);
+      let vvert = 0;
+      if (winA.length >= 4) {
+        const n = Math.min(3, Math.floor(winA.length/2));
+        const a0 = winA.slice(0,n).reduce((s,p)=>s+p.alt,0)/n;
+        const a1 = winA.slice(-n).reduce((s,p)=>s+p.alt,0)/n;
+        const t0 = winA.slice(0,n).reduce((s,p)=>s+p.ts,0)/n;
+        const t1 = winA.slice(-n).reduce((s,p)=>s+p.ts,0)/n;
+        const dt = (t1-t0)/1000;
+        if (dt > 2) {
+          const cap = maxVertSpeed(vAvg, detailRun.type || 'other');
+          vvert = Math.max(-cap, Math.min(cap, (a1-a0)/dt));
+        }
+      }
+      wattSeries[i] = calcWatt(vAvg, vvert);
+    }
   }
 
   // Charts zeichnen
-  drawSegmentCharts(seg);
+  drawSegmentCharts(seg, wattSeries);
   updateSegmentComparison(distStart, distEnd, avgSpd);
 }
 
-function drawSegmentCharts(seg) {
+function drawSegmentCharts(seg, wattSeries) {
   // Speed-Chart
   const sc = document.getElementById('segSpeedCanvas');
   const sctx = sc.getContext('2d');
   const W = sc.offsetWidth || 300;
   sc.width = W*devicePixelRatio; sc.height = 60*devicePixelRatio;
+  sctx.setTransform(1,0,0,1,0,0);
   sctx.scale(devicePixelRatio, devicePixelRatio);
   sctx.clearRect(0,0,W,60);
 
@@ -2739,6 +2750,7 @@ function drawSegmentCharts(seg) {
   const ac = document.getElementById('segAltCanvas');
   const actx = ac.getContext('2d');
   ac.width = W*devicePixelRatio; ac.height = 44*devicePixelRatio;
+  actx.setTransform(1,0,0,1,0,0);
   actx.scale(devicePixelRatio, devicePixelRatio);
   actx.clearRect(0,0,W,44);
 
@@ -2759,6 +2771,35 @@ function drawSegmentCharts(seg) {
     actx.beginPath(); actx.strokeStyle='#a855f7'; actx.lineWidth=2; actx.lineJoin='round';
     allAlts.forEach((a,i)=>{ i===0?actx.moveTo(xA(i),yA(a)):actx.lineTo(xA(i),yA(a)); });
     actx.stroke();
+  }
+
+  // Leistungs-Chart (nur Radfahren, wenn wattSeries übergeben)
+  const wt = document.getElementById('segWattTitle');
+  const wc = document.getElementById('segWattCanvas');
+  if (wattSeries && wattSeries.length > 1) {
+    wt.style.display = ''; wc.style.display = '';
+    const wctx = wc.getContext('2d');
+    wc.width = W*devicePixelRatio; wc.height = 44*devicePixelRatio;
+    wctx.setTransform(1,0,0,1,0,0);
+    wctx.scale(devicePixelRatio, devicePixelRatio);
+    wctx.clearRect(0,0,W,44);
+
+    const maxW = Math.max(...wattSeries, 1);
+    const avgW = wattSeries.reduce((a,b)=>a+b,0)/wattSeries.length;
+    document.getElementById('segWattInfo').textContent = `Ø ${Math.round(avgW)} W`;
+    const yW = v => 42 - (v/maxW)*36;
+    const xW = i => (i/(wattSeries.length-1))*W;
+
+    const gradW = wctx.createLinearGradient(0,0,0,44);
+    gradW.addColorStop(0,'rgba(245,158,11,0.35)'); gradW.addColorStop(1,'rgba(245,158,11,0)');
+    wctx.beginPath(); wattSeries.forEach((w,i)=>{ i===0?wctx.moveTo(xW(i),yW(w)):wctx.lineTo(xW(i),yW(w)); });
+    wctx.lineTo(xW(wattSeries.length-1),44); wctx.lineTo(0,44); wctx.closePath();
+    wctx.fillStyle=gradW; wctx.fill();
+    wctx.beginPath(); wctx.strokeStyle='#f59e0b'; wctx.lineWidth=2; wctx.lineJoin='round';
+    wattSeries.forEach((w,i)=>{ i===0?wctx.moveTo(xW(i),yW(w)):wctx.lineTo(xW(i),yW(w)); });
+    wctx.stroke();
+  } else {
+    wt.style.display = 'none'; wc.style.display = 'none';
   }
 }
 
