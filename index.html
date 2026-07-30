@@ -83,7 +83,11 @@ body.offline #offlineBadge { display:block; }
 
 /* ── Panel 0: Karte + kompakte Stats ── */
 #panelMap { position:relative; }
-#map { flex:1; min-height:180px; position:relative; z-index:1; }
+#map { height:var(--map0-h, 42vh); min-height:120px; flex:none; position:relative; z-index:1; }
+/* Zieh-Griff zwischen Karte und Datenbereich (stufenlose Höhe) */
+.drag-handle { height:16px; flex:none; display:flex; align-items:center; justify-content:center; background:var(--bg); cursor:ns-resize; touch-action:none; position:relative; z-index:600; }
+.drag-handle::before { content:''; width:40px; height:4px; border-radius:2px; background:var(--border); }
+.drag-handle:active::before { background:var(--accent); }
 .map-controls { position:absolute; top:10px; right:10px; z-index:500; display:flex; flex-direction:column; gap:6px; }
 .map-ctrl-btn { width:36px; height:36px; border-radius:8px; background:var(--surface); border:1px solid var(--border); color:var(--text); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.4); }
 .map-ctrl-btn.active-btn { background:var(--accent); color:#001a0d; border-color:var(--accent); }
@@ -214,7 +218,7 @@ body.offline #offlineBadge { display:block; }
 /* ── COMPARE / DETAIL ── */
 #page-compare { background:var(--bg); overflow:hidden; }
 #page-compare.active { display:flex; flex-direction:column; }
-#compare-map { height:220px; flex-shrink:0; }
+#compare-map { height:var(--mapC-h, 220px); flex-shrink:0; }
 .compare-bottom { padding:12px 14px; overflow-y:auto; flex:1; }
 
 /* Dual-Range-Slider */
@@ -411,6 +415,7 @@ body.offline #offlineBadge { display:block; }
             <button class="map-ctrl-btn"            id="btnHeatmap"  onclick="toggleHeatmap()">🔥</button>
           </div>
         </div>
+        <div class="drag-handle" id="dragHandle0" title="Ziehen zum Vergrößern"></div>
         <div class="tracker-bottom">
           <div class="status-row">
             <div class="gps-dot" id="gpsDot"></div>
@@ -445,7 +450,6 @@ body.offline #offlineBadge { display:block; }
             <div class="big-row"><span class="big-row-unit">km</span><span class="big-row-val c-accent" id="bigDist">0.00</span></div>
             <div class="big-row"><span class="big-row-unit" id="bigPaceUnit">min/km</span><span class="big-row-val c-white" id="bigPace">–:––</span></div>
             <div class="big-row"><span class="big-row-unit">km/h</span><span class="big-row-val c-blue" id="bigSpeed">0.0</span></div>
-            <div class="big-row"><span class="big-row-unit">⌀km/h</span><span class="big-row-val c-white" id="bigAvgSpeed">0.0</span></div>
             <div class="big-row"><span class="big-row-unit">hm↑</span><span class="big-row-val c-accent" id="bigAlt">0</span></div>
             <div class="big-row"><span class="big-row-unit">hm/h</span><span class="big-row-val c-purple" id="bigAltRate">0</span></div>
           </div>
@@ -472,10 +476,6 @@ body.offline #offlineBadge { display:block; }
           <div class="full-row">
             <span class="full-row-unit">km/h</span>
             <span class="full-row-val c-blue" id="fullSpeed">0.0</span>
-          </div>
-          <div class="full-row">
-            <span class="full-row-unit">⌀km/h</span>
-            <span class="full-row-val c-white" id="fullAvgSpeed">0.0</span>
           </div>
           <div class="full-row">
             <span class="full-row-unit">hm↑</span>
@@ -534,6 +534,7 @@ body.offline #offlineBadge { display:block; }
 <!-- ════════════════ COMPARE ════════════════ -->
 <div class="page" id="page-compare">
   <div id="compare-map"></div>
+  <div class="drag-handle" id="dragHandleC" title="Ziehen zum Vergrößern"></div>
   <div class="compare-bottom">
 
     <!-- Header -->
@@ -2718,6 +2719,20 @@ function updateSegmentAnalysis(distStart, distEnd) {
   updateSegmentComparison(distStart, distEnd, avgSpd);
 }
 
+// Kleine Skala (max oben, min unten) rechts an einem Segment-Chart. Gibt der
+// bisher achsenlosen Zeitleiste eine Orientierung, ohne viel Platz zu kosten.
+function drawChartScale(ctx, W, H, maxVal, minVal, color, unit) {
+  ctx.save();
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'top';
+  ctx.fillText(Math.round(maxVal)+unit, W-3, 2);
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(Math.round(minVal)+unit, W-3, H-2);
+  ctx.restore();
+}
+
 function drawSegmentCharts(seg, wattSeries) {
   // Speed-Chart
   const sc = document.getElementById('segSpeedCanvas');
@@ -2745,6 +2760,7 @@ function drawSegmentCharts(seg, wattSeries) {
   sctx.beginPath(); sctx.strokeStyle='#00e5a0'; sctx.lineWidth=2; sctx.lineJoin='round';
   speeds.forEach((s,i)=>{ i===0?sctx.moveTo(xOf(i),yS(s)):sctx.lineTo(xOf(i),yS(s)); });
   sctx.stroke();
+  drawChartScale(sctx, W, 60, maxS, 0, 'rgba(0,229,160,0.7)', '');
 
   // Höhen-Chart
   const ac = document.getElementById('segAltCanvas');
@@ -2771,6 +2787,7 @@ function drawSegmentCharts(seg, wattSeries) {
     actx.beginPath(); actx.strokeStyle='#a855f7'; actx.lineWidth=2; actx.lineJoin='round';
     allAlts.forEach((a,i)=>{ i===0?actx.moveTo(xA(i),yA(a)):actx.lineTo(xA(i),yA(a)); });
     actx.stroke();
+    drawChartScale(actx, W, 44, maxA, minA, 'rgba(168,85,247,0.75)', '');
   }
 
   // Leistungs-Chart (nur Radfahren, wenn wattSeries übergeben)
@@ -2798,6 +2815,7 @@ function drawSegmentCharts(seg, wattSeries) {
     wctx.beginPath(); wctx.strokeStyle='#f59e0b'; wctx.lineWidth=2; wctx.lineJoin='round';
     wattSeries.forEach((w,i)=>{ i===0?wctx.moveTo(xW(i),yW(w)):wctx.lineTo(xW(i),yW(w)); });
     wctx.stroke();
+    drawChartScale(wctx, W, 44, maxW, 0, 'rgba(245,158,11,0.8)', '');
   } else {
     wt.style.display = 'none'; wc.style.display = 'none';
   }
@@ -3629,11 +3647,63 @@ function deactivateScreenLock() {
   if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
 }
 
+// Stufenlose Höhenverstellung der Karten per Zieh-Griff. Beide Griffe
+// verstellen die Höhe der jeweils darüberliegenden Karte über eine
+// CSS-Variable; der Datenbereich darunter nimmt den Rest (bzw. wird länger
+// und scrollbar). Touch + Maus. Die Leaflet-Karte wird nach dem Ziehen über
+// invalidateSize() an die neue Größe angepasst.
+function setupMapResizeHandles() {
+  const configs = [
+    { handle:'dragHandle0', container:'panelMap', mapEl:'map',        cssVar:'--map0-h', map:()=>tMap,  minPx:120, maxFrac:0.75 },
+    { handle:'dragHandleC', container:'page-compare', mapEl:'compare-map', cssVar:'--mapC-h', map:()=>cMap, minPx:120, maxFrac:0.75 },
+  ];
+  for (const cfg of configs) {
+    const handle = document.getElementById(cfg.handle);
+    const mapEl  = document.getElementById(cfg.mapEl);
+    const container = document.getElementById(cfg.container);
+    if (!handle || !mapEl || !container) continue;
+
+    let dragging = false;
+
+    const start = (e) => {
+      dragging = true;
+      e.preventDefault();
+      document.body.style.userSelect = 'none';
+    };
+    const move = (e) => {
+      if (!dragging) return;
+      const y = e.touches ? e.touches[0].clientY : e.clientY;
+      const rect = container.getBoundingClientRect();
+      let h = y - rect.top;               // gewünschte Kartenhöhe = Mausposition relativ zum Container-Oberrand
+      const maxH = rect.height * cfg.maxFrac;
+      h = Math.max(cfg.minPx, Math.min(maxH, h));
+      container.style.setProperty(cfg.cssVar, h + 'px');
+      const m = cfg.map();
+      if (m) m.invalidateSize();
+    };
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.userSelect = '';
+      const m = cfg.map();
+      if (m) setTimeout(()=>m.invalidateSize(), 50);
+    };
+
+    handle.addEventListener('mousedown', start);
+    handle.addEventListener('touchstart', start, {passive:false});
+    window.addEventListener('mousemove', move);
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('mouseup', end);
+    window.addEventListener('touchend', end);
+  }
+}
+
 window.addEventListener('load', async () => {
   initTrackerMap();
   loadWeight();
   updateInfoTabVisibility();
   checkAndRestoreDraft();
+  setupMapResizeHandles();
   try {
     await initIDB();
     await migrateToIDB();
