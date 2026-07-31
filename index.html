@@ -120,8 +120,8 @@ body.offline #offlineBadge { display:block; }
 .big-rows { flex:1; display:flex; flex-direction:column; justify-content:space-evenly; min-height:0; }
 .big-row { display:flex; align-items:baseline; gap:10px; padding:0 2px; border-bottom:1px solid rgba(255,255,255,0.05); }
 .big-row:last-child { border-bottom:none; }
-.big-row-unit { font-family:var(--mono); font-size:clamp(28px,9.5vw,56px); font-weight:500; color:var(--muted); width:clamp(48px,13vw,72px); flex-shrink:0; }
-.big-row-val  { font-family:var(--mono); font-size:clamp(56px,19vw,112px); font-weight:700; line-height:0.95; flex:1; text-align:right; }
+.big-row-unit { font-family:var(--mono); font-size:clamp(20px,6vw,44px); font-weight:500; color:var(--muted); width:clamp(40px,11vw,64px); flex-shrink:0; }
+.big-row-val  { font-family:var(--mono); font-size:var(--big-val-size, clamp(56px,19vw,112px)); font-weight:700; line-height:0.95; flex:1; text-align:right; }
 .big-row-val.c-accent { color:var(--accent); }
 .big-row-val.c-blue   { color:var(--blue); }
 .big-row-val.c-white  { color:var(--text); }
@@ -236,6 +236,18 @@ body.offline #offlineBadge { display:block; }
 #segSpeedCanvas { width:100%; height:60px; display:block; margin-bottom:4px; }
 #segAltCanvas   { width:100%; height:44px; display:block; }
 #segWattCanvas  { width:100%; height:44px; display:block; }
+/* Tap-Hinweis auf den kleinen Charts */
+.seg-chart-wrap canvas { cursor:zoom-in; }
+/* Vollbild-Chart-Overlay (Tap auf einen Graphen) */
+#chartFull { position:fixed; inset:0; z-index:9500; background:var(--bg); display:none; flex-direction:column; }
+#chartFull.show { display:flex; }
+#chartFull .cf-head { display:flex; align-items:center; gap:12px; padding:14px 16px 8px; }
+#chartFull .cf-title { font-size:16px; font-weight:700; flex:1; }
+#chartFull .cf-close { font-size:22px; background:none; border:none; color:var(--muted); padding:4px 8px; cursor:pointer; }
+#chartFull .cf-canvas-wrap { flex:1; padding:0 12px; min-height:0; }
+#chartFull canvas { width:100%; height:100%; display:block; }
+#chartFull .cf-foot { padding:8px 16px 20px; }
+#chartFull .cf-info { display:flex; justify-content:space-around; font-family:var(--mono); font-size:13px; margin-bottom:10px; }
 
 /* Segment-Kennzahlen */
 .seg-stats { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:12px; }
@@ -594,6 +606,28 @@ body.offline #offlineBadge { display:block; }
   </div>
 </div>
 
+<!-- Vollbild-Chart (Tap auf einen Segment-Graphen) -->
+<div id="chartFull">
+  <div class="cf-head">
+    <div class="cf-title" id="cfTitle">Leistung</div>
+    <button class="cf-close" onclick="closeChartFull()">✕</button>
+  </div>
+  <div class="cf-canvas-wrap"><canvas id="cfCanvas"></canvas></div>
+  <div class="cf-foot">
+    <div class="cf-info" id="cfInfo"></div>
+    <div class="slider-wrap" id="cfSliderWrap">
+      <div class="slider-track"></div>
+      <div class="slider-fill" id="cfSliderFill"></div>
+      <input type="range" class="range-input" id="cfSliderStart" min="0" max="100" value="0" step="0.1">
+      <input type="range" class="range-input" id="cfSliderEnd"   min="0" max="100" value="100" step="0.1">
+    </div>
+    <div class="slider-labels">
+      <span id="cfSliderStartLbl">0.00 km</span>
+      <span id="cfSliderEndLbl">0.00 km</span>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════ PLAN ════════════════ -->
 <div class="page" id="page-plan">
   <div id="planMap"></div>
@@ -844,7 +878,7 @@ function goToView(idx) {
   dots.forEach((d, i) => d.classList.toggle('active', i === currentView));
   setTimeout(() => {
     if (currentView === 0 && tMap)  tMap.invalidateSize();
-    if (currentView === 1 && tMap2) tMap2.invalidateSize();
+    if (currentView === 1 && tMap2) { tMap2.invalidateSize(); fitBigDataRows(); }
   }, 350);
 }
 
@@ -2718,6 +2752,10 @@ function updateSegmentAnalysis(distStart, distEnd) {
   // Charts zeichnen
   drawSegmentCharts(seg, wattSeries);
   updateSegmentComparison(distStart, distEnd, avgSpd);
+
+  // Daten für den Vollbild-Chart merken (falls gerade offen: neu zeichnen)
+  cfData = { seg, wattSeries };
+  if (document.getElementById('chartFull').classList.contains('show')) drawChartFull();
 }
 
 // Kleine Skala (max oben, min unten) rechts an einem Segment-Chart. Gibt der
@@ -2732,6 +2770,91 @@ function drawChartScale(ctx, W, H, maxVal, minVal, color, unit) {
   ctx.textBaseline = 'bottom';
   ctx.fillText(Math.round(minVal)+unit, W-3, H-2);
   ctx.restore();
+}
+
+// ── Vollbild-Chart (Tap auf einen Segment-Graphen) ──────────────
+let cfData = null;      // { seg, wattSeries } des aktuellen Segments
+let cfMetric = 'watt';  // welcher Graph im Vollbild: 'speed' | 'alt' | 'watt'
+
+function openChartFull(metric) {
+  if (!cfData || !cfData.seg || cfData.seg.length < 2) return;
+  if (metric === 'watt' && !cfData.wattSeries) return; // Watt nur beim Rad
+  cfMetric = metric;
+  const titles = { speed:'Geschwindigkeit', alt:'Höhe', watt:'Leistung' };
+  document.getElementById('cfTitle').textContent = titles[metric] || '';
+  // Slider im Vollbild mit dem Haupt-Slider gleichstellen (gleiche Skala!)
+  const s = document.getElementById('sliderStart'), e = document.getElementById('sliderEnd');
+  const cs = document.getElementById('cfSliderStart'), ce = document.getElementById('cfSliderEnd');
+  cs.min = s.min; cs.max = s.max; cs.step = s.step; cs.value = s.value;
+  ce.min = e.min; ce.max = e.max; ce.step = e.step; ce.value = e.value;
+  // Labels/Fill spiegeln
+  document.getElementById('cfSliderStartLbl').textContent = document.getElementById('sliderStartLbl').textContent;
+  document.getElementById('cfSliderEndLbl').textContent   = document.getElementById('sliderEndLbl').textContent;
+  const f = document.getElementById('sliderFill'), cff = document.getElementById('cfSliderFill');
+  if (f && cff) { cff.style.left = f.style.left; cff.style.right = f.style.right; }
+  document.getElementById('chartFull').classList.add('show');
+  requestAnimationFrame(drawChartFull);
+}
+function closeChartFull() {
+  document.getElementById('chartFull').classList.remove('show');
+}
+
+function drawChartFull() {
+  if (!cfData) return;
+  const seg = cfData.seg;
+  const canvas = document.getElementById('cfCanvas');
+  const wrap = canvas.parentElement;
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  canvas.width = W*devicePixelRatio; canvas.height = H*devicePixelRatio;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0); ctx.scale(devicePixelRatio, devicePixelRatio);
+  ctx.clearRect(0,0,W,H);
+
+  // Serie + Stil je nach Metrik
+  let series, color, unit;
+  if (cfMetric === 'speed')      { series = seg.map(p=>p.speed||0);            color='#00e5a0'; unit=' km/h'; }
+  else if (cfMetric === 'alt')   { series = seg.map(p=>p.alt).filter(a=>a!=null); color='#a855f7'; unit=' m'; }
+  else                            { series = cfData.wattSeries || [];           color='#f59e0b'; unit=' W'; }
+  if (series.length < 2) return;
+
+  const maxV = Math.max(...series), minV = cfMetric==='alt' ? Math.min(...series) : 0;
+  const span = maxV - minV || 1;
+  const padL = 8, padR = 8, padT = 14, padB = 22;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const xOf = i => padL + (i/(series.length-1))*plotW;
+  const yOf = v => padT + plotH - ((v-minV)/span)*plotH;
+
+  // Gitterlinien (4 horizontale) + Werte
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '11px sans-serif'; ctx.lineWidth = 1;
+  for (let g=0; g<=4; g++) {
+    const val = minV + span*g/4;
+    const y = yOf(val);
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+    ctx.textAlign='left'; ctx.textBaseline='bottom';
+    ctx.fillText(Math.round(val)+unit, padL+2, y-1);
+  }
+
+  // Distanz-Achse (Start/Ende km)
+  // Fläche + Linie
+  const grad = ctx.createLinearGradient(0,padT,0,padT+plotH);
+  grad.addColorStop(0, color+'55'); grad.addColorStop(1, color+'00');
+  ctx.beginPath();
+  series.forEach((v,i)=>{ i===0?ctx.moveTo(xOf(i),yOf(v)):ctx.lineTo(xOf(i),yOf(v)); });
+  ctx.lineTo(xOf(series.length-1), padT+plotH); ctx.lineTo(xOf(0), padT+plotH); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+  ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin='round';
+  series.forEach((v,i)=>{ i===0?ctx.moveTo(xOf(i),yOf(v)):ctx.lineTo(xOf(i),yOf(v)); });
+  ctx.stroke();
+
+  // Info-Zeile: Ø / max / min
+  const avg = series.reduce((a,b)=>a+b,0)/series.length;
+  const info = document.getElementById('cfInfo');
+  const u = unit.trim();
+  info.innerHTML =
+    `<span style="color:${color}">Ø ${Math.round(avg)} ${u}</span>`+
+    `<span style="color:${color}">max ${Math.round(maxV)} ${u}</span>`+
+    (cfMetric==='alt' ? `<span style="color:${color}">min ${Math.round(minV)} ${u}</span>` : '');
 }
 
 function drawSegmentCharts(seg, wattSeries) {
@@ -3653,6 +3776,25 @@ function deactivateScreenLock() {
 // CSS-Variable; der Datenbereich darunter nimmt den Rest (bzw. wird länger
 // und scrollbar). Touch + Maus. Die Leaflet-Karte wird nach dem Ziehen über
 // invalidateSize() an die neue Größe angepasst.
+// Skaliert die großen Fahrtdaten-Werte (Panel 2) so, dass alle Zeilen in die
+// verfügbare Höhe passen — wird kleiner, wenn die Karte größer gezogen wird,
+// und größer, wenn die Karte schrumpft. Reines CSS kann Schrift nicht an die
+// Container-HÖHE koppeln (nur an die Breite via vw), daher per JS.
+function fitBigDataRows() {
+  const bottom = document.querySelector('.big-bottom');
+  const rows = document.querySelector('.big-rows');
+  if (!bottom || !rows) return;
+  const rowCount = rows.querySelectorAll('.big-row').length || 5;
+  // verfügbare Höhe pro Zeile (abzüglich etwas Padding), Werthöhe ~ 0.8 davon
+  const avail = bottom.clientHeight;
+  const perRow = avail / rowCount;
+  // Schriftgröße = Zeilenhöhe * Faktor, begrenzt nach oben (nicht riesig auf
+  // großem big-bottom) und unten (lesbar). line-height 0.95 einkalkuliert.
+  let size = perRow * 0.78;
+  size = Math.max(22, Math.min(96, size));
+  rows.style.setProperty('--big-val-size', size + 'px');
+}
+
 function setupMapResizeHandles() {
   const configs = [
     { handle:'dragHandle0', container:'panelMap', mapEl:'map',        cssVar:'--map0-h', map:()=>tMap,  minPx:120, maxFrac:0.75 },
@@ -3682,6 +3824,7 @@ function setupMapResizeHandles() {
       container.style.setProperty(cfg.cssVar, h + 'px');
       const m = cfg.map();
       if (m) m.invalidateSize();
+      if (cfg.handle === 'dragHandle2') fitBigDataRows(); // Werte live an neue Höhe anpassen
     };
     const end = () => {
       if (!dragging) return;
@@ -3698,6 +3841,31 @@ function setupMapResizeHandles() {
     window.addEventListener('mouseup', end);
     window.addEventListener('touchend', end);
   }
+  fitBigDataRows(); // initiale Größe
+
+  // Tap auf einen Segment-Graphen → Vollbild
+  const tapMap = { segSpeedCanvas:'speed', segAltCanvas:'alt', segWattCanvas:'watt' };
+  Object.entries(tapMap).forEach(([id, metric]) => {
+    const c = document.getElementById(id);
+    if (c) c.addEventListener('click', () => openChartFull(metric));
+  });
+
+  // Vollbild-Slider steuert den Haupt-Slider (Auswahl live anpassbar)
+  const cfS = document.getElementById('cfSliderStart'), cfE = document.getElementById('cfSliderEnd');
+  const mainS = document.getElementById('sliderStart'), mainE = document.getElementById('sliderEnd');
+  const syncFromCf = (which) => {
+    if (which === 'start') { mainS.value = cfS.value; }
+    else { mainE.value = cfE.value; }
+    mainS.dispatchEvent(new Event('input')); // Haupt-Logik neu rechnen → cfData + drawChartFull
+    // Vollbild-Labels/Fill spiegeln
+    document.getElementById('cfSliderStartLbl').textContent = document.getElementById('sliderStartLbl').textContent;
+    document.getElementById('cfSliderEndLbl').textContent   = document.getElementById('sliderEndLbl').textContent;
+    const f = document.getElementById('sliderFill');
+    const cff = document.getElementById('cfSliderFill');
+    if (f && cff) { cff.style.left = f.style.left; cff.style.right = f.style.right; }
+  };
+  if (cfS) cfS.addEventListener('input', () => syncFromCf('start'));
+  if (cfE) cfE.addEventListener('input', () => syncFromCf('end'));
 }
 
 window.addEventListener('load', async () => {
