@@ -85,8 +85,8 @@ body.offline #offlineBadge { display:block; }
 #panelMap { position:relative; }
 #map { height:var(--map0-h, 42vh); min-height:120px; flex:none; position:relative; z-index:1; }
 /* Zieh-Griff zwischen Karte und Datenbereich (stufenlose Höhe) */
-.drag-handle { height:16px; flex:none; display:flex; align-items:center; justify-content:center; background:var(--bg); cursor:ns-resize; touch-action:none; position:relative; z-index:600; }
-.drag-handle::before { content:''; width:40px; height:4px; border-radius:2px; background:var(--border); }
+.drag-handle { height:22px; flex:none; display:flex; align-items:center; justify-content:center; background:var(--panel,#151922); cursor:ns-resize; touch-action:none; position:relative; z-index:600; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+.drag-handle::before { content:''; width:48px; height:5px; border-radius:3px; background:var(--muted,#5a6580); }
 .drag-handle:active::before { background:var(--accent); }
 .map-controls { position:absolute; top:10px; right:10px; z-index:500; display:flex; flex-direction:column; gap:6px; }
 .map-ctrl-btn { width:36px; height:36px; border-radius:8px; background:var(--surface); border:1px solid var(--border); color:var(--text); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.4); }
@@ -112,11 +112,11 @@ body.offline #offlineBadge { display:block; }
 #speedCanvas { width:100%; flex:1; min-height:0; display:block; }
 
 /* ── Panel 1: Karte (50%) + Zeilen-Stats (50%) ── */
-#panelBig { position:relative; height:100%; }
-#map2Wrap { height:50%; position:relative; flex-shrink:0; }
+#panelBig { position:relative; height:100%; display:flex; flex-direction:column; }
+#map2Wrap { height:var(--map2-h, 50%); position:relative; flex:none; }
 #map2 { height:100%; position:relative; z-index:1; }
 .map2-controls { position:absolute; top:8px; right:8px; z-index:500; display:flex; flex-direction:column; gap:5px; }
-.big-bottom { background:var(--bg); padding:4px 14px 2px; height:50%; display:flex; flex-direction:column; min-height:0; }
+.big-bottom { background:var(--bg); padding:4px 14px 2px; flex:1; min-height:0; display:flex; flex-direction:column; }
 .big-rows { flex:1; display:flex; flex-direction:column; justify-content:space-evenly; min-height:0; }
 .big-row { display:flex; align-items:baseline; gap:10px; padding:0 2px; border-bottom:1px solid rgba(255,255,255,0.05); }
 .big-row:last-child { border-bottom:none; }
@@ -445,6 +445,7 @@ body.offline #offlineBadge { display:block; }
             <button class="map-ctrl-btn"            id="btnFitAll2"   onclick="fitRoute()">⤢</button>
           </div>
         </div>
+        <div class="drag-handle" id="dragHandle2" title="Ziehen zum Vergrößern"></div>
         <div class="big-bottom">
           <div class="big-rows">
             <div class="big-row"><span class="big-row-unit">km</span><span class="big-row-val c-accent" id="bigDist">0.00</span></div>
@@ -3655,6 +3656,7 @@ function deactivateScreenLock() {
 function setupMapResizeHandles() {
   const configs = [
     { handle:'dragHandle0', container:'panelMap', mapEl:'map',        cssVar:'--map0-h', map:()=>tMap,  minPx:120, maxFrac:0.75 },
+    { handle:'dragHandle2', container:'panelBig', mapEl:'map2Wrap',    cssVar:'--map2-h', map:()=>tMap2, minPx:120, maxFrac:0.75 },
     { handle:'dragHandleC', container:'page-compare', mapEl:'compare-map', cssVar:'--mapC-h', map:()=>cMap, minPx:120, maxFrac:0.75 },
   ];
   for (const cfg of configs) {
