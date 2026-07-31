@@ -85,8 +85,8 @@ body.offline #offlineBadge { display:block; }
 #panelMap { position:relative; }
 #map { height:var(--map0-h, 42vh); min-height:120px; flex:none; position:relative; z-index:1; }
 /* Zieh-Griff zwischen Karte und Datenbereich (stufenlose Höhe) */
-.drag-handle { height:22px; flex:none; display:flex; align-items:center; justify-content:center; background:var(--panel,#151922); cursor:ns-resize; touch-action:none; position:relative; z-index:600; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
-.drag-handle::before { content:''; width:48px; height:5px; border-radius:3px; background:var(--muted,#5a6580); }
+.drag-handle { height:26px; flex:none; display:flex; align-items:center; justify-content:center; background:var(--panel,#151922); cursor:ns-resize; touch-action:none; position:relative; z-index:600; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+.drag-handle::before { content:''; width:64px; height:6px; border-radius:3px; background:#ffffff; box-shadow:0 0 0 1px rgba(0,0,0,.3); }
 .drag-handle:active::before { background:var(--accent); }
 .map-controls { position:absolute; top:10px; right:10px; z-index:500; display:flex; flex-direction:column; gap:6px; }
 .map-ctrl-btn { width:36px; height:36px; border-radius:8px; background:var(--surface); border:1px solid var(--border); color:var(--text); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.4); }
