@@ -236,6 +236,9 @@ body.offline #offlineBadge { display:block; }
 #segSpeedCanvas { width:100%; height:60px; display:block; margin-bottom:4px; }
 #segAltCanvas   { width:100%; height:44px; display:block; }
 #segWattCanvas  { width:100%; height:44px; display:block; }
+.seg-chart-block { cursor:pointer; border-radius:8px; padding:4px; margin:0 -4px; transition:background 0.15s; }
+.seg-chart-block:active { background:rgba(255,255,255,0.05); }
+.seg-expand { font-size:11px; color:var(--muted); margin-left:4px; }
 /* Tap-Hinweis auf den kleinen Charts */
 .seg-chart-wrap canvas { cursor:zoom-in; }
 /* Vollbild-Chart-Overlay (Tap auf einen Graphen) */
@@ -572,23 +575,29 @@ body.offline #offlineBadge { display:block; }
       <span id="sliderEndLbl">0.00 km</span>
     </div>
 
-    <!-- Segment-Chart: Speed + Höhe -->
+    <!-- Segment-Charts: Speed + Höhe + Leistung, jeder antippbar → Vollbild -->
     <div class="seg-chart-wrap" style="margin-top:10px">
-      <div class="seg-chart-title">
-        <span>Geschwindigkeit</span>
-        <span id="segSpeedInfo" style="color:var(--accent)"></span>
+      <div class="seg-chart-block" onclick="openChartFull('speed')">
+        <div class="seg-chart-title">
+          <span>Geschwindigkeit <span class="seg-expand">⤢</span></span>
+          <span id="segSpeedInfo" style="color:var(--accent)"></span>
+        </div>
+        <canvas id="segSpeedCanvas"></canvas>
       </div>
-      <canvas id="segSpeedCanvas"></canvas>
-      <div class="seg-chart-title" style="margin-top:8px">
-        <span>Höhe</span>
-        <span id="segAltInfo" style="color:var(--purple)"></span>
+      <div class="seg-chart-block" onclick="openChartFull('alt')" style="margin-top:8px">
+        <div class="seg-chart-title">
+          <span>Höhe <span class="seg-expand">⤢</span></span>
+          <span id="segAltInfo" style="color:var(--purple)"></span>
+        </div>
+        <canvas id="segAltCanvas"></canvas>
       </div>
-      <canvas id="segAltCanvas"></canvas>
-      <div class="seg-chart-title" id="segWattTitle" style="margin-top:8px;display:none">
-        <span>Leistung</span>
-        <span id="segWattInfo" style="color:#f59e0b"></span>
+      <div class="seg-chart-block" id="segWattBlock" onclick="openChartFull('watt')" style="margin-top:8px;display:none">
+        <div class="seg-chart-title" id="segWattTitle">
+          <span>Leistung <span class="seg-expand">⤢</span></span>
+          <span id="segWattInfo" style="color:#f59e0b"></span>
+        </div>
+        <canvas id="segWattCanvas"></canvas>
       </div>
-      <canvas id="segWattCanvas" style="display:none"></canvas>
     </div>
 
     <!-- Kennzahlen -->
@@ -1115,11 +1124,26 @@ function slidingWindowAvg(pts, field, windowSec) {
 // das künstlich auf ±0.7 gekappt, blieb der (korrekt riesige) Luftwiderstand
 // bei diesem Tempo ungegenrechnet — die Differenz erschien fälschlich als
 // Tretleistung mitten in einer Abfahrt ohne jeden Tritt.
+// Obergrenze der Vertikalgeschwindigkeit, ASYMMETRISCH: bergauf kann man real
+// nur begrenzt schnell Höhe gewinnen (~2000 hm/h ist schon extremes Klettern),
+// bergab der Straße folgend aber deutlich schneller verlieren (~7200 hm/h).
+// Ein einzelner GPS-Höhensprung von z.B. +100 m in Sekunden erzeugt sonst
+// absurde Kletterleistung (>1000 W) mitten in der Ebene. Die Grenzen fangen
+// solche Ausreißer, ohne echte Anstiege/Abfahrten zu verfälschen (die liegen
+// klar darunter — an echten Tracks lag der 99%-Wik bergauf bei ~1440 hm/h).
+const VVERT_MAX_UP   = 2000/3600; // m/s, Anstieg  (~0.556)
+const VVERT_MAX_DOWN = 7200/3600; // m/s, Abfahrt  (2.0)
+
+function clampVvert(vv) {
+  return Math.max(-VVERT_MAX_DOWN, Math.min(VVERT_MAX_UP, vv));
+}
+
 function maxVertSpeed(speedKmh, type) {
+  // (bleibt für Rückwärtskompatibilität; die harte asymmetrische Grenze
+  // clampVvert() ist jetzt der maßgebliche Ausreißerschutz)
   const v = (speedKmh || 0) / 3.6;
-  const maxGrade = type === 'bike' ? 0.30 : 0.15; // 30% / 15% als realistische Extremsteigung
-  const absoluteCeiling = type === 'bike' ? 6 : 2; // m/s harte Notbremse, bleibt Ausreißerschutz
-  return Math.min(absoluteCeiling, Math.max(0.7, v * maxGrade));
+  const maxGrade = type === 'bike' ? 0.30 : 0.15;
+  return Math.max(0.7, v * maxGrade);
 }
 
 function vertSpeedMs(points, windowSec, speedKmh, type) {
@@ -1130,15 +1154,15 @@ function vertSpeedMs(points, windowSec, speedKmh, type) {
   const W = wa.filter(p => p.ts >= ts - windowSec*1000);
   if (W.length < 4) return 0;
   const n = Math.min(3, Math.floor(W.length/2));
-  const a0 = W.slice(0,n).reduce((s,p)=>s+p.alt,0)/n;
-  const a1 = W.slice(-n).reduce((s,p)=>s+p.alt,0)/n;
+  // MEDIAN statt Mittelwert an den Fensterrändern: ein einzelner Höhen-
+  // Ausreißer in den Randpunkten verzerrt so die Rate nicht.
+  const a0 = median(W.slice(0,n).map(p=>p.alt));
+  const a1 = median(W.slice(-n).map(p=>p.alt));
   const t0 = W.slice(0,n).reduce((s,p)=>s+p.ts,0)/n;
   const t1 = W.slice(-n).reduce((s,p)=>s+p.ts,0)/n;
   const dt = (t1-t0)/1000;
   if (dt <= 2) return 0;
-  const vv = (a1-a0)/dt;
-  const cap = maxVertSpeed(speedKmh, type);
-  return Math.max(-cap, Math.min(cap, vv));
+  return clampVvert((a1-a0)/dt);
 }
 
 function altRateFromWindow(points, windowSec) {
@@ -2686,15 +2710,12 @@ function updateSegmentAnalysis(distStart, distEnd) {
       let vvert = 0;
       if (winA.length >= 4) {
         const n = Math.min(3, Math.floor(winA.length/2));
-        const a0 = winA.slice(0,n).reduce((s,p)=>s+p.alt,0)/n;
-        const a1 = winA.slice(-n).reduce((s,p)=>s+p.alt,0)/n;
+        const a0 = median(winA.slice(0,n).map(p=>p.alt));
+        const a1 = median(winA.slice(-n).map(p=>p.alt));
         const t0 = winA.slice(0,n).reduce((s,p)=>s+p.ts,0)/n;
         const t1 = winA.slice(-n).reduce((s,p)=>s+p.ts,0)/n;
         const dt = (t1-t0)/1000;
-        if (dt > 2) {
-          const cap = maxVertSpeed(vAvg, detailRun.type || 'other');
-          vvert = Math.max(-cap, Math.min(cap, (a1-a0)/dt));
-        }
+        if (dt > 2) vvert = clampVvert((a1-a0)/dt);
       }
       wattsInSeg.push(calcWatt(vAvg, vvert));
     }
@@ -2735,15 +2756,12 @@ function updateSegmentAnalysis(distStart, distEnd) {
       let vvert = 0;
       if (winA.length >= 4) {
         const n = Math.min(3, Math.floor(winA.length/2));
-        const a0 = winA.slice(0,n).reduce((s,p)=>s+p.alt,0)/n;
-        const a1 = winA.slice(-n).reduce((s,p)=>s+p.alt,0)/n;
+        const a0 = median(winA.slice(0,n).map(p=>p.alt));
+        const a1 = median(winA.slice(-n).map(p=>p.alt));
         const t0 = winA.slice(0,n).reduce((s,p)=>s+p.ts,0)/n;
         const t1 = winA.slice(-n).reduce((s,p)=>s+p.ts,0)/n;
         const dt = (t1-t0)/1000;
-        if (dt > 2) {
-          const cap = maxVertSpeed(vAvg, detailRun.type || 'other');
-          vvert = Math.max(-cap, Math.min(cap, (a1-a0)/dt));
-        }
+        if (dt > 2) vvert = clampVvert((a1-a0)/dt);
       }
       wattSeries[i] = calcWatt(vAvg, vvert);
     }
@@ -2805,6 +2823,7 @@ function drawChartFull() {
   const canvas = document.getElementById('cfCanvas');
   const wrap = canvas.parentElement;
   const W = wrap.clientWidth, H = wrap.clientHeight;
+  if (W < 10 || H < 10) { requestAnimationFrame(drawChartFull); return; } // Layout noch nicht fertig
   canvas.width = W*devicePixelRatio; canvas.height = H*devicePixelRatio;
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1,0,0,1,0,0); ctx.scale(devicePixelRatio, devicePixelRatio);
@@ -2915,10 +2934,10 @@ function drawSegmentCharts(seg, wattSeries) {
   }
 
   // Leistungs-Chart (nur Radfahren, wenn wattSeries übergeben)
-  const wt = document.getElementById('segWattTitle');
+  const wblock = document.getElementById('segWattBlock');
   const wc = document.getElementById('segWattCanvas');
   if (wattSeries && wattSeries.length > 1) {
-    wt.style.display = ''; wc.style.display = '';
+    wblock.style.display = '';
     const wctx = wc.getContext('2d');
     wc.width = W*devicePixelRatio; wc.height = 44*devicePixelRatio;
     wctx.setTransform(1,0,0,1,0,0);
@@ -2941,7 +2960,7 @@ function drawSegmentCharts(seg, wattSeries) {
     wctx.stroke();
     drawChartScale(wctx, W, 44, maxW, 0, 'rgba(245,158,11,0.8)', '');
   } else {
-    wt.style.display = 'none'; wc.style.display = 'none';
+    wblock.style.display = 'none';
   }
 }
 
@@ -3843,12 +3862,7 @@ function setupMapResizeHandles() {
   }
   fitBigDataRows(); // initiale Größe
 
-  // Tap auf einen Segment-Graphen → Vollbild
-  const tapMap = { segSpeedCanvas:'speed', segAltCanvas:'alt', segWattCanvas:'watt' };
-  Object.entries(tapMap).forEach(([id, metric]) => {
-    const c = document.getElementById(id);
-    if (c) c.addEventListener('click', () => openChartFull(metric));
-  });
+  // (Tap auf einen Graphen → Vollbild ist per onclick am .seg-chart-block verdrahtet)
 
   // Vollbild-Slider steuert den Haupt-Slider (Auswahl live anpassbar)
   const cfS = document.getElementById('cfSliderStart'), cfE = document.getElementById('cfSliderEnd');
