@@ -3699,6 +3699,9 @@ function activateScreenLock() {
   const overlay = document.getElementById('screenLock');
   overlay.classList.add('active');
 
+  // Alle laufenden Drags (Resize-Handles) sofort abbrechen
+  document.dispatchEvent(new Event('lockactivated'));
+
   // touch-action:none auf dem Swipe-Container blockiert Android's Edge-Back-Gesture
   // auf Browser-Ebene (zusätzlich zu den JS-Checks)
   document.getElementById('trackerSwipe').style.touchAction = 'none';
@@ -3894,12 +3897,13 @@ function setupMapResizeHandles() {
     let dragging = false;
 
     const start = (e) => {
+      if (screenLocked) return; // gesperrt → kein Drag
       dragging = true;
       e.preventDefault();
       document.body.style.userSelect = 'none';
     };
     const move = (e) => {
-      if (!dragging) return;
+      if (!dragging || screenLocked) return; // gesperrt → sofort abbrechen
       const y = e.touches ? e.touches[0].clientY : e.clientY;
       const rect = container.getBoundingClientRect();
       let h = y - rect.top;               // gewünschte Kartenhöhe = Mausposition relativ zum Container-Oberrand
@@ -3917,6 +3921,8 @@ function setupMapResizeHandles() {
       const m = cfg.map();
       if (m) setTimeout(()=>m.invalidateSize(), 50);
     };
+    // Bei Sperre laufenden Drag sofort abbrechen
+    document.addEventListener('lockactivated', () => { dragging = false; document.body.style.userSelect = ''; });
 
     handle.addEventListener('mousedown', start);
     handle.addEventListener('touchstart', start, {passive:false});
