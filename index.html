@@ -3706,6 +3706,18 @@ function activateScreenLock() {
   // feuert popstate → wir pushen sofort wieder → die App bleibt stehen.
   try { history.pushState({locked:true}, ''); } catch(e){}
 
+  // ── ECHTER VOLLBILD-MODUS (immersive) ────────────────────────────
+  // Blendet die Android-System-Leisten UND die Gesten-Zonen aus. Der
+  // erste Randwisch (links/rechts/oben) holt dann nur die Leisten zurück,
+  // statt die Zurück-Geste auszulösen. Das ist der wirksamste Schutz
+  // gegen versehentliche Eingaben in der Tasche. Muss aus einer Nutzer-
+  // Geste (Button-Tap) aufgerufen werden – das ist hier der Fall.
+  try {
+    const de = document.documentElement;
+    if (de.requestFullscreen)            de.requestFullscreen({navigationUI:'hide'}).catch(()=>{});
+    else if (de.webkitRequestFullscreen) de.webkitRequestFullscreen();
+  } catch(e){}
+
   // Alle laufenden Drags (Resize-Handles) sofort abbrechen
   document.dispatchEvent(new Event('lockactivated'));
 
@@ -3737,6 +3749,15 @@ function activateScreenLock() {
 window.addEventListener('popstate', () => {
   if (screenLocked) {
     try { history.pushState({locked:true}, ''); } catch(e){}
+    // COMPOSITOR-KICK: Chrome zeigt bei der Zurück-Geste ein Screenshot-
+    // Overlay der Peel-Animation. Wird die Navigation abgebrochen, bleibt
+    // dieses Standbild manchmal hängen → sieht aus wie "eingefroren".
+    // Ein erzwungenes Neu-Compositing des Overlays räumt es weg.
+    const ov = document.getElementById('screenLock');
+    if (ov) {
+      ov.style.transform = 'translateZ(0)';
+      requestAnimationFrame(() => { ov.style.transform = ''; });
+    }
     // kurzes visuelles Feedback dass die Geste geblockt wurde
     const hint = document.getElementById('screenLockHint');
     if (hint) { hint.classList.add('flash'); setTimeout(()=>hint.classList.remove('flash'), 200); }
@@ -3865,6 +3886,13 @@ function deactivateScreenLock() {
   if (history.state && history.state.locked) {
     try { history.back(); } catch(e){}
   }
+  // Vollbild-Modus wieder verlassen
+  try {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      if (document.exitFullscreen)            document.exitFullscreen().catch(()=>{});
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
+  } catch(e){}
   const overlay = document.getElementById('screenLock');
   overlay.classList.remove('active');
   overlay.removeEventListener('touchstart',  onLockTouchStart);
