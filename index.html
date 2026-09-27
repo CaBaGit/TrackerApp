@@ -3699,11 +3699,17 @@ function activateScreenLock() {
   const overlay = document.getElementById('screenLock');
   overlay.classList.add('active');
 
+  // ── HISTORY-FALLE gegen Android/iOS Edge-Back-Geste ──────────────
+  // preventDefault() in Touch-Handlern stoppt die System-Zurück-Geste im
+  // PWA-Standalone-Modus NICHT (sie wird auf OS-Ebene erkannt). Der einzige
+  // wirksame Weg: einen History-Eintrag pushen. Wischt der Nutzer "zurück",
+  // feuert popstate → wir pushen sofort wieder → die App bleibt stehen.
+  try { history.pushState({locked:true}, ''); } catch(e){}
+
   // Alle laufenden Drags (Resize-Handles) sofort abbrechen
   document.dispatchEvent(new Event('lockactivated'));
 
-  // touch-action:none auf dem Swipe-Container blockiert Android's Edge-Back-Gesture
-  // auf Browser-Ebene (zusätzlich zu den JS-Checks)
+  // touch-action:none auf dem Swipe-Container (zusätzlich zu den JS-Checks)
   document.getElementById('trackerSwipe').style.touchAction = 'none';
 
   if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
@@ -3713,11 +3719,29 @@ function activateScreenLock() {
 
   lockGesturePoints = [];
   lockGestureActive = false;
+  // Erst entfernen (idempotent: verhindert doppelte Listener wenn activate-
+  // ScreenLock z.B. über visibilitychange erneut aufgerufen wird)
+  overlay.removeEventListener('touchstart',  onLockTouchStart);
+  overlay.removeEventListener('touchmove',   onLockTouchMove);
+  overlay.removeEventListener('touchend',    onLockTouchEnd);
+  overlay.removeEventListener('touchcancel', onLockTouchCancel);
   overlay.addEventListener('touchstart',  onLockTouchStart,  {passive:false});
   overlay.addEventListener('touchmove',   onLockTouchMove,   {passive:false});
   overlay.addEventListener('touchend',    onLockTouchEnd,    {passive:false});
   overlay.addEventListener('touchcancel', onLockTouchCancel, {passive:false});
 }
+
+// Globaler popstate-Handler: fängt jede Zurück-Navigation ab solange gesperrt.
+// Wird einmal registriert. Pusht den Eintrag sofort neu → die Zurück-Geste
+// läuft ins Leere, statt die PWA zu verlassen (= das eigentliche "Aufhängen").
+window.addEventListener('popstate', () => {
+  if (screenLocked) {
+    try { history.pushState({locked:true}, ''); } catch(e){}
+    // kurzes visuelles Feedback dass die Geste geblockt wurde
+    const hint = document.getElementById('screenLockHint');
+    if (hint) { hint.classList.add('flash'); setTimeout(()=>hint.classList.remove('flash'), 200); }
+  }
+});
 
 function updateLockScreen() {
   const sec = running ? (Date.now() - startTime + elapsed) / 1000 : elapsed / 1000;
@@ -3738,20 +3762,21 @@ function updateLockScreen() {
 }
 
 function onLockTouchStart(e) {
+  e.preventDefault(); // immer blockieren, auch bei Mehrfinger-Berührung
   if (e.touches.length !== 1) { lockGesturePoints = []; lockGestureActive = false; return; }
   lockGestureActive = true;
   lockGesturePoints = [{x:e.touches[0].clientX, y:e.touches[0].clientY}];
-  e.preventDefault();
 }
 
 function onLockTouchMove(e) {
+  e.preventDefault(); // immer blockieren
   if (!lockGestureActive || e.touches.length !== 1) return;
   lockGesturePoints.push({x:e.touches[0].clientX, y:e.touches[0].clientY});
   drawLockGesturePath();
-  e.preventDefault();
 }
 
 function onLockTouchEnd(e) {
+  e.preventDefault(); // immer blockieren (verhindert Click-Emulation)
   if (!lockGestureActive) return;
   lockGestureActive = false;
   if (checkLGesture(lockGesturePoints)) {
@@ -3762,7 +3787,6 @@ function onLockTouchEnd(e) {
     lockGesturePoints = [];
     clearLockGesturePath();
   }
-  e.preventDefault();
 }
 
 // Wenn ein Touch vom System abgebrochen wird (z.B. eingehender Anruf,
@@ -3835,6 +3859,12 @@ function clearLockGesturePath() {
 
 function deactivateScreenLock() {
   screenLocked = false;
+  // History-Eintrag der Sperre wieder konsumieren. screenLocked ist bereits
+  // false → der popstate-Handler pusht NICHT neu, der Eintrag wird sauber
+  // entfernt (History bleibt ausbalanciert).
+  if (history.state && history.state.locked) {
+    try { history.back(); } catch(e){}
+  }
   const overlay = document.getElementById('screenLock');
   overlay.classList.remove('active');
   overlay.removeEventListener('touchstart',  onLockTouchStart);
