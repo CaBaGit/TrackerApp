@@ -3688,6 +3688,33 @@ function saveRuns(){
 let screenLocked = false;
 let lockTimerInt = null;
 
+// Fordert den immersiven Vollbild-Modus an – aber nur wenn gesperrt und noch
+// nicht im Vollbild. requestFullscreen() braucht eine "transiente Aktivierung"
+// (eine Nutzer-Geste in den letzten ~5 s). In der Tasche gibt es ständig
+// Berührungen, die diese Aktivierung liefern → der 1-Sekunden-Timer in
+// updateLockScreen() erneuert das Vollbild dann erfolgreich. Zusätzlich wird
+// diese Funktion bei jeder Berührung des Overlays direkt aufgerufen (dort ist
+// die Aktivierung garantiert frisch). Ohne Aktivierung wirft/rejected der
+// Aufruf still – deshalb .catch()/try.
+function ensureFullscreen() {
+  if (!screenLocked) return;
+  if (document.fullscreenElement || document.webkitFullscreenElement) return;
+  try {
+    const de = document.documentElement;
+    if (de.requestFullscreen)            de.requestFullscreen({navigationUI:'hide'}).catch(()=>{});
+    else if (de.webkitRequestFullscreen) de.webkitRequestFullscreen();
+  } catch(e){}
+}
+
+// Verlässt die Zurück-Geste den Vollbild-Modus, während noch gesperrt ist,
+// sofort wieder anfordern (klappt, solange die Geste noch als Aktivierung gilt).
+document.addEventListener('fullscreenchange', () => {
+  if (screenLocked && !document.fullscreenElement) ensureFullscreen();
+});
+document.addEventListener('webkitfullscreenchange', () => {
+  if (screenLocked && !document.webkitFullscreenElement) ensureFullscreen();
+});
+
 // L-Geste: zuerst deutlich runter, dann deutlich nach rechts.
 // Mindestlängen relativ zur Bildschirmgröße, damit es auf jedem Gerät funktioniert.
 let lockGesturePoints = [];
@@ -3712,11 +3739,11 @@ function activateScreenLock() {
   // statt die Zurück-Geste auszulösen. Das ist der wirksamste Schutz
   // gegen versehentliche Eingaben in der Tasche. Muss aus einer Nutzer-
   // Geste (Button-Tap) aufgerufen werden – das ist hier der Fall.
-  try {
-    const de = document.documentElement;
-    if (de.requestFullscreen)            de.requestFullscreen({navigationUI:'hide'}).catch(()=>{});
-    else if (de.webkitRequestFullscreen) de.webkitRequestFullscreen();
-  } catch(e){}
+  // WICHTIG: Die Zurück-Geste beendet den Vollbild-Modus (Android-Standard:
+  // "Zurück" verlässt erst das Vollbild). Deshalb wird der Vollbild-Modus
+  // laufend erneuert – siehe ensureFullscreen(): per Timer und bei jeder
+  // Berührung. So bleibt die Gesten-Sperre dauerhaft aktiv.
+  ensureFullscreen();
 
   // Alle laufenden Drags (Resize-Handles) sofort abbrechen
   document.dispatchEvent(new Event('lockactivated'));
@@ -3765,6 +3792,10 @@ window.addEventListener('popstate', () => {
 });
 
 function updateLockScreen() {
+  // Vollbild-Modus jede Sekunde erneuern, falls die Zurück-Geste ihn beendet
+  // hat. Nutzt die transiente Aktivierung aus den laufenden Taschen-Berührungen.
+  ensureFullscreen();
+
   const sec = running ? (Date.now() - startTime + elapsed) / 1000 : elapsed / 1000;
   document.getElementById('lockTimer').textContent = fmtTime(sec);
 
@@ -3784,6 +3815,9 @@ function updateLockScreen() {
 
 function onLockTouchStart(e) {
   e.preventDefault(); // immer blockieren, auch bei Mehrfinger-Berührung
+  // Jede Berührung liefert eine frische Nutzer-Aktivierung → Vollbild erneuern.
+  // Genau die Taschen-Berührungen, die sonst stören, halten so die Sperre aktiv.
+  ensureFullscreen();
   if (e.touches.length !== 1) { lockGesturePoints = []; lockGestureActive = false; return; }
   lockGestureActive = true;
   lockGesturePoints = [{x:e.touches[0].clientX, y:e.touches[0].clientY}];
