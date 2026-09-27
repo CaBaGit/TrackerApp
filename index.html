@@ -339,6 +339,10 @@ body.offline #offlineBadge { display:block; }
   flex-direction:column; align-items:center; justify-content:center;
   gap:16px; cursor:none;
   touch-action:none;
+  overscroll-behavior:none;
+  /* Verhindert dass der Browser Pull-to-Refresh oder Nav-Gesten auslöst */
+  user-select:none;
+  -webkit-user-select:none;
 }
 #screenLock.active { display:flex; }
 #lockGestureSvg {
@@ -921,6 +925,7 @@ function isTouchOnMap(el) {
 
 const swipeEl = document.getElementById('trackerSwipe');
 swipeEl.addEventListener('touchstart', e => {
+  if (screenLocked) return; // Sperrbildschirm aktiv → kein Panel-Wechsel
   swipeAllowed = !isTouchOnMap(e.target);
   if (!swipeAllowed) return;
   swipeStartX = e.touches[0].clientX;
@@ -930,6 +935,7 @@ swipeEl.addEventListener('touchstart', e => {
 }, {passive:true});
 
 swipeEl.addEventListener('touchmove', e => {
+  if (screenLocked) return; // Sperrbildschirm aktiv → blockieren
   if (!swiping || !swipeAllowed) return;
   swipeDx = e.touches[0].clientX - swipeStartX;
   const dy = e.touches[0].clientY - swipeStartY;
@@ -939,6 +945,7 @@ swipeEl.addEventListener('touchmove', e => {
 }, {passive:true});
 
 swipeEl.addEventListener('touchend', () => {
+  if (screenLocked) { swiping = false; swipeAllowed = false; return; }
   if (!swiping || !swipeAllowed) return;
   swiping = false;
   slider.style.transition = '';
@@ -3698,9 +3705,10 @@ function activateScreenLock() {
 
   lockGesturePoints = [];
   lockGestureActive = false;
-  overlay.addEventListener('touchstart', onLockTouchStart, {passive:false});
-  overlay.addEventListener('touchmove',  onLockTouchMove,  {passive:false});
-  overlay.addEventListener('touchend',   onLockTouchEnd,   {passive:false});
+  overlay.addEventListener('touchstart',  onLockTouchStart,  {passive:false});
+  overlay.addEventListener('touchmove',   onLockTouchMove,   {passive:false});
+  overlay.addEventListener('touchend',    onLockTouchEnd,    {passive:false});
+  overlay.addEventListener('touchcancel', onLockTouchCancel, {passive:false});
 }
 
 function updateLockScreen() {
@@ -3747,6 +3755,14 @@ function onLockTouchEnd(e) {
     clearLockGesturePath();
   }
   e.preventDefault();
+}
+
+// Wenn ein Touch vom System abgebrochen wird (z.B. eingehender Anruf,
+// Notification Shade) → Gesture-State sauber zurücksetzen, nicht einfrieren
+function onLockTouchCancel(e) {
+  lockGestureActive = false;
+  lockGesturePoints = [];
+  clearLockGesturePath();
 }
 
 // Prüft ob der gezeichnete Pfad ein "L" ist:
@@ -3813,12 +3829,21 @@ function deactivateScreenLock() {
   screenLocked = false;
   const overlay = document.getElementById('screenLock');
   overlay.classList.remove('active');
-  overlay.removeEventListener('touchstart', onLockTouchStart);
-  overlay.removeEventListener('touchmove',  onLockTouchMove);
-  overlay.removeEventListener('touchend',   onLockTouchEnd);
+  overlay.removeEventListener('touchstart',  onLockTouchStart);
+  overlay.removeEventListener('touchmove',   onLockTouchMove);
+  overlay.removeEventListener('touchend',    onLockTouchEnd);
+  overlay.removeEventListener('touchcancel', onLockTouchCancel);
   clearLockGesturePath();
   document.getElementById('screenLockHint').classList.remove('flash');
   lockGesturePoints = [];
+  lockGestureActive = false;
+  // Swipe-State des Panel-Sliders zurücksetzen, damit kein halbfertiger
+  // Swipe nach dem Entsperren noch verarbeitet wird → verhindert Freeze
+  swiping = false;
+  swipeAllowed = false;
+  swipeDx = 0;
+  slider.style.transition = '';
+  goToView(currentView); // Panel-Position sauber setzen
   clearInterval(lockTimerInt);
   if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
 }
