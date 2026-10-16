@@ -337,7 +337,8 @@ body.offline #offlineBadge { display:block; }
   display:none; position:fixed; inset:0; z-index:99999;
   background:#000;
   flex-direction:column; align-items:center; justify-content:center;
-  gap:16px; cursor:none;
+  gap:clamp(8px, 2.5svh, 20px); cursor:none;
+  overflow:hidden; /* nichts darf über den Rand laufen */
   touch-action:none;
   overscroll-behavior:none;
   /* Verhindert dass der Browser Pull-to-Refresh oder Nav-Gesten auslöst */
@@ -356,29 +357,31 @@ body.offline #offlineBadge { display:block; }
 }
 #screenLockHint.flash { color:rgba(255,255,255,0.6); }
 #screenLockNumbers {
-  display:flex; gap:24px; align-items:center; justify-content:center;
-  width:100%; padding:0 20px; box-sizing:border-box;
+  display:flex; gap:clamp(12px, 4vw, 32px); align-items:center; justify-content:center;
+  width:100%; padding:0 16px; box-sizing:border-box;
 }
-.lock-num-wrap { display:flex; flex-direction:column; align-items:center; flex:1; }
+.lock-num-wrap { display:flex; flex-direction:column; align-items:center; flex:1; min-width:0; }
+/* Schrift über HÖHE (svh) UND BREITE (vw) begrenzt, dazu harte Obergrenze.
+   min() nimmt den kleinsten Wert → läuft nie über den Rand, egal welches Gerät. */
 .lock-num {
   font-family:var(--mono); font-weight:700; color:#fff;
-  font-size:clamp(48px, 16svh, 110px); line-height:0.9;
+  font-size:min(14svh, 17vw, 84px); line-height:0.9;
   text-align:center; min-width:0;
 }
 .lock-num-unit {
-  font-family:var(--mono); font-size:clamp(13px, 3.5svh, 24px);
+  font-family:var(--mono); font-size:min(3svh, 4.5vw, 22px);
   color:rgba(255,255,255,0.4); margin-top:4px; letter-spacing:0.06em;
 }
 .lock-divider {
-  width:1px; height:clamp(60px, 12svh, 100px); background:rgba(255,255,255,0.12); flex:none;
+  width:1px; height:min(11svh, 90px); background:rgba(255,255,255,0.12); flex:none;
 }
 .lock-clock {
-  font-family:var(--mono); font-size:clamp(38px, 12svh, 80px);
+  font-family:var(--mono); font-size:min(10svh, 16vw, 68px);
   font-weight:300; color:rgba(255,255,255,0.85);
   letter-spacing:0.04em;
 }
 .lock-timer {
-  font-family:var(--mono); font-size:clamp(20px, 5.5svh, 40px);
+  font-family:var(--mono); font-size:min(5svh, 9vw, 38px);
   font-weight:300; color:rgba(255,255,255,0.35);
   letter-spacing:0.02em;
 }
@@ -557,6 +560,7 @@ body.offline #offlineBadge { display:block; }
     <div class="import-row">
       <label class="btn-import" style="cursor:pointer">📂 JSON<input type="file" accept=".json" style="display:none" onchange="importJSON(event)"></label>
       <label class="btn-import" style="cursor:pointer">🗺 GPX<input type="file" accept=".gpx,.xml" style="display:none" onchange="importGPX(event)"></label>
+      <label class="btn-import" style="cursor:pointer">📁 Ordner<input type="file" webkitdirectory multiple style="display:none" onchange="importFolder(event)"></label>
     </div>
   </div>
   <div id="runList" style="padding:0 16px 16px"></div>
@@ -992,7 +996,13 @@ function calcWatt(speedKmh, vVertMs) {
   return Math.max(0, Math.round(pAir + pRoll + pSteig));
 }
 const SPEED_AVG_SEC = 20;
-const ALT_AVG_SEC   = 30;   // Glättungsfenster für hm/h-Anzeige. Von 60s auf
+const ALT_RATE_WINDOW_M = 200; // hm/h: Geraden-Fit über 200 m STRECKE (nicht Zeit).
+// Strecke statt Zeit, weil das GPS-Höhenrauschen an langsamen/stehenden Stellen
+// am größten ist – ein Strecken-Fenster glättet dort automatisch stärker und an
+// schnellen (sauberen) Abschnitten weniger. An echten Tracks gemessen: ruhigste
+// Anzeige UND kleinste Extremausschläge. Geraden-Fit (kleinste Quadrate) statt
+// Median, weil die Ableitung einer Median-Stufenkurve Spitzen erzeugt.
+const ALT_AVG_SEC   = 30;   // (nur noch für evtl. Alt-Aufrufe) Von 60s auf
 // 30s verkürzt: das 60s-Fenster brauchte bis zu 120s durchgehende Historie
 // und erholte sich nach einer Lücke viel langsamer als der Watt-Wert (der
 // nur ein 20s-Fenster nutzt) — dadurch wirkte hm/h instabiler als das daraus
@@ -1222,6 +1232,37 @@ function altRateFromWindow(points, windowSec) {
   }
 
   return ((altNow - altBefore) / dtSec) * 3600; // m/h
+}
+
+// hm/h als Steigung der Höhe über die letzten windowM METER (Geraden-Fit,
+// kleinste Quadrate). Strecken- statt zeitbasiert: glättet automatisch stärker
+// wo man langsam ist (dort ist das GPS-Höhenrauschen am größten) und weniger wo
+// man schnell ist. Liefert m/h. Kein Median hier – die Ableitung einer Median-
+// Stufenkurve würde zappeln; der Geraden-Fit ist der glatte Raten-Schätzer.
+function altRateLinfit(points, windowM) {
+  let wa = points.filter(p => p.alt != null);
+  wa = trimAfterLastGap(wa); // Lücke? nur Daten seit der letzten Lücke
+  if (wa.length < 3) return 0;
+  // Trailing-Punkte innerhalb windowM Strecke, vom neuesten rückwärts gesammelt
+  const sel = [wa[wa.length-1]];
+  let dist = 0;
+  for (let i = wa.length-2; i >= 0; i--) {
+    dist += haversine(wa[i].lat, wa[i].lng, wa[i+1].lat, wa[i+1].lng) * 1000; // km→m
+    sel.push(wa[i]);
+    if (dist >= windowM) break;
+  }
+  if (sel.length < 3) return 0;
+  const t0 = sel[sel.length-1].ts; // ältester Punkt der Auswahl
+  const xs = sel.map(p => (p.ts - t0) / 1000); // Sekunden
+  const ys = sel.map(p => p.alt);
+  const span = Math.max(...xs) - Math.min(...xs);
+  if (span < 5) return 0; // zu wenig Zeit für eine sinnvolle Rate
+  const n = xs.length;
+  const mx = xs.reduce((a,b)=>a+b,0)/n, my = ys.reduce((a,b)=>a+b,0)/n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { num += (xs[i]-mx)*(ys[i]-my); den += (xs[i]-mx)**2; }
+  if (den <= 0) return 0;
+  return (num/den) * 3600; // m/s → m/h
 }
 
 // ══════════════════════════════════════════════
@@ -1515,18 +1556,23 @@ function updateToggleBtn() {
   const btnReset = document.getElementById('btnReset');
   const btnLock  = document.getElementById('btnLock');
   if (!btn) return;
+  const nav = document.getElementById('nav');
   if (running) {
     btn.textContent = 'Stop';
     btn.className = 'btn btn-stop';
     // Während Aufzeichnung: Reset verstecken (Vertipper-Schutz), Lock nimmt die Breite
     if (btnReset) btnReset.style.display = 'none';
     if (btnLock)  { btnLock.style.flex = '1'; btnLock.style.fontSize = '28px'; }
+    // Nav-Leiste ausblenden: der "Aktivität"-Tab lag direkt unter dem Sperr-
+    // button → Vertipper in Bewegung. Jetzt füllt die Steuerleiste die Ecke.
+    if (nav) nav.style.display = 'none';
   } else {
     btn.textContent = currentRun ? 'Weiter' : 'Start';
     btn.className = 'btn btn-start';
-    // Außerhalb Aufzeichnung: Reset sichtbar, Lock wieder kompakt
+    // Außerhalb Aufzeichnung: Reset sichtbar, Lock wieder kompakt, Nav zurück
     if (btnReset) btnReset.style.display = '';
     if (btnLock)  { btnLock.style.flex = ''; btnLock.style.fontSize = ''; }
+    if (nav) nav.style.display = '';
   }
 }
 function resetRun() {
@@ -1723,11 +1769,14 @@ function onGPS(pos) {
   // Richtungen) sauber erkannt — dort ohne diesen Kollateralschaden.
   const altToUse = altitude;
 
+  // elevGain wird NICHT mehr hier roh aufsummiert (das zählte jeden GPS-
+  // Höhenwackler und ergab ~2x zu viel). Stattdessen in updateLiveStats aus den
+  // geglätteten Punkten neu berechnet — siehe liveElevGain(). lastAlt/altRateVal
+  // bleiben für die Momentan-Rate des Punkts erhalten.
   let altRateVal=0;
   if(altToUse!=null&&currentRun.lastAlt!=null){
     const dAlt=altToUse-currentRun.lastAlt;
     if(Math.abs(dAlt)>=ALT_MIN_DELTA){
-      if(dAlt>0) currentRun.elevGain+=dAlt;
       currentRun.lastAlt=altToUse;
       altRateVal=dtSec>0?(dAlt/dtSec)*3600:0;
     }
@@ -1792,9 +1841,12 @@ function onGPS(pos) {
   const km=Math.floor(currentRun.dist);
   if(km>currentRun.lastSplitKm){currentRun.splits.push({km,elapsed:(ts-currentRun.startTs)/1000});currentRun.lastSplitKm=km;}
 
+  // Höhengewinn live aus geglätteten Punkten (statt roher Aufsummierung)
+  currentRun.elevGain = liveElevGain(currentRun.points);
+
   // Mittelwerte
   const avgSpeed20  = rollingAvg(currentRun.points,'speed',SPEED_AVG_SEC);
-  const avgAltRate  = altRateFromWindow(currentRun.points, ALT_AVG_SEC);
+  const avgAltRate  = altRateLinfit(currentRun.points, ALT_RATE_WINDOW_M);
   const elapsedSec  = (Date.now()-startTime+(elapsed||0))/1000;
   const totalAvgSpd = currentRun.dist>0.05&&elapsedSec>0?(currentRun.dist/elapsedSec)*3600:0;
   const pace20      = avgSpeed20>0.1?3600/avgSpeed20:0;
@@ -1909,10 +1961,10 @@ function drawLiveChart(points) {
   if (sampledIdx[sampledIdx.length-1] !== points.length-1) sampledIdx.push(points.length-1);
 
   // Geglättete Werte pro Stützpunkt berechnen — gleiche Fenster wie die
-  // große Zahl-Anzeige (20s Speed, 60s HM/h), damit Chart und Anzeige
+  // große Zahl-Anzeige (20s Speed, 200m HM/h), damit Chart und Anzeige
   // konsistent aussehen statt der Chart unnötig verrauscht wirkt.
   const speedsSampled  = sampledIdx.map(i => rollingAvg(points.slice(0,i+1), 'speed', SPEED_AVG_SEC));
-  const altRatesSampled = sampledIdx.map(i => altRateFromWindow(points.slice(0,i+1), ALT_AVG_SEC));
+  const altRatesSampled = sampledIdx.map(i => altRateLinfit(points.slice(0,i+1), ALT_RATE_WINDOW_M));
   const hasAlt = altRatesSampled.some(v=>Math.abs(v)>5);
 
   // ── Skalierung je Aktivitätsmodus ──
@@ -2157,7 +2209,13 @@ function filterAltitudeOutliers(rawPoints) {
 //  statt sie einzumischen, und schneidet echte Kurven weniger ab.
 // ══════════════════════════════════════════════
 const SMOOTH_POS_M = 25; // Positionsfenster: Karte + Distanz entrauschen, Kurven weitgehend erhalten
-const SMOOTH_ALT_M = 35; // Höhenfenster: Profil + elevGain glätten (etwas kräftiger, Höhe darf glatter sein)
+const SMOOTH_ALT_M = 120; // Höhenfenster (Gesamtbreite, m) für Profil + elevGain.
+// Von 35 auf 120 erhöht: 35 m (±17 m) war zu schmal und ließ ~2x zu viel
+// Höhengewinn durch (GPS-Höhenrauschen aufsummiert). Gegen einen barometrisch
+// gemessenen Referenz-Track (FitoTrack, gleicher Lauf) getestet: ein 120-m-
+// Strecken-Median trifft dessen Höhengewinn. Strecke statt Zeit bewusst —
+// Gelände ist räumlich, und ein Strecken-Fenster räumt genau die langsamen/
+// stehenden Abschnitte auf, wo das GPS-Höhenrauschen am größten ist.
 
 // Kumulierte Distanz (km) je Punkt — Basis fürs distanzbasierte Fenster.
 function cumDistances(pts) {
@@ -2251,6 +2309,30 @@ function smoothAltitudeMedian(pts, windowM) {
     out[i].alt = median(window);
   }
   return out;
+}
+
+// Live-Höhengewinn: dieselbe Rechnung wie im Export (buildDerivedTrackFields),
+// aber auf den bisher aufgezeichneten Punkten — damit die LIVE-Anzeige nicht
+// mehr roh jeden GPS-Wackler aufsummiert (das ergab ~2x zu viel), sondern den
+// Wert zeigt, der am Ende auch gespeichert wird. Erst 120-m-Strecken-Median
+// (entrauscht), dann Anstiege mit Hysterese (ALT_MIN_DELTA) gegen eine
+// mitgeführte Referenzhöhe summieren. Das Tail-Ende ist noch nicht zentriert
+// geglättet (keine Zukunftspunkte live) → die letzten Meter justieren sich beim
+// Speichern minimal nach; der angezeigte Gesamtwert stimmt praktisch exakt.
+function liveElevGain(points) {
+  if (!points || points.length < 5) return 0;
+  const sm = smoothAltitudeMedian(points, SMOOTH_ALT_M);
+  let refAlt = null, gain = 0;
+  for (const p of sm) {
+    if (p.alt == null) continue;
+    if (refAlt == null) { refAlt = p.alt; continue; }
+    const dA = p.alt - refAlt;
+    if (Math.abs(dA) >= ALT_MIN_DELTA) {
+      if (dA > 0) gain += dA;
+      refAlt = p.alt;
+    }
+  }
+  return gain;
 }
 
 // Bequemer Gesamt-Durchlauf: erst Ausreißer (einzelne Sprünge), dann Glättung
@@ -2373,35 +2455,51 @@ function exportGPX(run) {
 function exportJSON(run){download(`lauf_${run.id}.json`,JSON.stringify(run,null,2),'application/json');}
 function download(filename,content,type){const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([content],{type})),download:filename});document.body.appendChild(a);a.click();document.body.removeChild(a);}
 
+// ── Wiederverwendbare Parser (kein UI/Speichern) ─────────────────────────
+// Erzeugen aus Dateitext ein fertiges Run-Objekt (bereinigt, geglättet,
+// bearing berechnet). Genutzt vom Einzel- UND vom Ordner-Import, damit beide
+// exakt dieselbe Verarbeitung durchlaufen.
+function buildRunFromGpxText(text, fileName) {
+  const xml = new DOMParser().parseFromString(text, 'text/xml');
+  const trkpts = Array.from(xml.querySelectorAll('trkpt'));
+  if (!trkpts.length) throw new Error('Keine Trackpunkte');
+  const importType = 'other'; // Aktivität beim GPX-Import unbekannt
+  // Rohpunkte extrahieren, dann bereinigen (Ausreißer raus + Rausch-Glättung,
+  // distanzbasierter Median für Position & Höhe getrennt), dann ableiten.
+  const raw = trkpts.map(pt => {
+    const lat=parseFloat(pt.getAttribute('lat')), lng=parseFloat(pt.getAttribute('lon'));
+    const timeEl=pt.querySelector('time'), ts=timeEl?new Date(timeEl.textContent).getTime():Date.now();
+    const eleEl=pt.querySelector('ele'), alt=eleEl?parseFloat(eleEl.textContent):null;
+    return {lat,lng,ts,alt};
+  });
+  const cleaned = cleanTrackPoints(raw, importType);
+  const {points, splits, dist:cumDist, elevGain} = buildDerivedTrackFields(cleaned.points, importType);
+  const run = {id:points[0].ts, startTs:points[0].ts, duration:(points[points.length-1].ts-points[0].ts),
+    dist:cumDist, elevGain, points, splits, source:'gpx',
+    name: xml.querySelector('name')?.textContent || fileName, type:importType};
+  addBearingToRun(run);
+  return {run, fixedCount:cleaned.fixedCount};
+}
+function buildRunFromJsonText(text, fileName) {
+  const run = JSON.parse(text);
+  if (!run.points || !run.startTs) throw new Error('Ungültiges Format');
+  run.source = run.source || 'json';
+  if (!run.type) run.type = 'other';
+  const raw = run.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt, speed:p.speed}));
+  const cleaned = cleanTrackPoints(raw, run.type);
+  const {points, splits, dist, elevGain} = buildDerivedTrackFields(cleaned.points, run.type);
+  run.points=points; run.splits=splits; run.dist=dist; run.elevGain=elevGain;
+  addBearingToRun(run);
+  return {run, fixedCount:cleaned.fixedCount};
+}
+
 function importJSON(event) {
   const file=event.target.files[0];if(!file)return;
   const r=new FileReader();
   r.onload=e=>{
     try{
-      const run=JSON.parse(e.target.result);
-      if(!run.points||!run.startTs)throw new Error('Ungültiges Format');
-      run.source=run.source||'json';
-      if(!run.type)run.type='other';
+      const {run, fixedCount} = buildRunFromJsonText(e.target.result, file.name);
       if(runs.find(x=>x.id===run.id)){ toast('Lauf bereits vorhanden'); return; }
-
-      // Gleicher Ausreißer-Check wie beim GPX-Import — betrifft nur Tracks,
-      // die selbst schon Ausreißer enthalten (z.B. exportiert aus einer
-      // älteren App-Version ohne Live-Filter). Unauffällige Imports bleiben
-      // Vollständige Bereinigung: erst einzelne Ausreißer (Sprünge) raus,
-      // dann flächiges GPS-Rauschen glätten (distanzbasierter Median, für
-      // Position und Höhe getrennt). Anders als die reine Ausreißer-Erkennung
-      // läuft die Glättung IMMER — verrauschte Tracks haben oft gar keine
-      // isolierten Sprünge, sondern durchgehende Streuung, die nur die
-      // Glättung auffängt. Deshalb hier nicht mehr an fixedCount>0 gekoppelt.
-      const raw = run.points.map(p => ({lat:p.lat, lng:p.lng, ts:p.ts, alt:p.alt, speed:p.speed}));
-      const cleaned = cleanTrackPoints(raw, run.type);
-      const fixedCount = cleaned.fixedCount;
-      const {points, splits, dist, elevGain} = buildDerivedTrackFields(cleaned.points, run.type);
-      run.points = points; run.splits = splits; run.dist = dist; run.elevGain = elevGain;
-
-      // bearing (re)berechnen — kostet nichts, macht importierte Tracks
-      // heatmap-/referenztrack-tauglich, egal ob die Quelldatei es schon hatte
-      addBearingToRun(run);
       persistRunToIDB(run);
       runs.unshift(run);saveRuns();
       toast(fixedCount>0 ? `Lauf importiert (geglättet, ${fixedCount} Ausreißer korrigiert)` : 'Lauf importiert (geglättet)');
@@ -2415,40 +2513,48 @@ function importGPX(event) {
   const r=new FileReader();
   r.onload=e=>{
     try{
-      const xml=new DOMParser().parseFromString(e.target.result,'text/xml');
-      const trkpts=Array.from(xml.querySelectorAll('trkpt'));
-      if(!trkpts.length)throw new Error('Keine Trackpunkte');
-      const importType='other'; // Aktivität ist beim GPX-Import unbekannt, wie bisher
-
-      // 1. Rohpunkte extrahieren (nur Position/Zeit/Höhe, noch keine Ableitungen)
-      const raw = trkpts.map(pt => {
-        const lat=parseFloat(pt.getAttribute('lat')),lng=parseFloat(pt.getAttribute('lon'));
-        const timeEl=pt.querySelector('time'),ts=timeEl?new Date(timeEl.textContent).getTime():Date.now();
-        const eleEl=pt.querySelector('ele'),alt=eleEl?parseFloat(eleEl.textContent):null;
-        return {lat,lng,ts,alt};
-      });
-
-      // 2. GPS-Bereinigung BEVOR Speed/Distanz/Splits berechnet werden —
-      // sonst fließt Rauschen/Ausreißer doppelt ein und verzerrt Distanz und
-      // Speed-Chart. cleanTrackPoints macht beides: einzelne Sprünge raus +
-      // flächige Rausch-Glättung (distanzbasierter Median, Position & Höhe
-      // getrennt). Glättung läuft immer, nicht nur bei gefundenen Ausreißern.
-      const cleaned = cleanTrackPoints(raw, importType);
-      const fixedCount = cleaned.fixedCount;
-      const {points, splits, dist:cumDist, elevGain} = buildDerivedTrackFields(cleaned.points, importType);
-
-      const run={id:points[0].ts,startTs:points[0].ts,duration:(points[points.length-1].ts-points[0].ts),dist:cumDist,elevGain,points,splits,source:'gpx',name:xml.querySelector('name')?.textContent||file.name,type:importType};
+      const {run, fixedCount} = buildRunFromGpxText(e.target.result, file.name);
       if(runs.find(x=>x.id===run.id)){ toast('Track bereits vorhanden'); return; }
-      addBearingToRun(run);
       persistRunToIDB(run);
       runs.unshift(run);saveRuns();
       toast(fixedCount>0
-        ? `GPX importiert: ${cumDist.toFixed(2)} km (geglättet, ${fixedCount} Ausreißer)`
-        : `GPX importiert: ${cumDist.toFixed(2)} km (geglättet)`);
+        ? `GPX importiert: ${run.dist.toFixed(2)} km (geglättet, ${fixedCount} Ausreißer)`
+        : `GPX importiert: ${run.dist.toFixed(2)} km (geglättet)`);
       renderHistory();
     }catch(err){toast('GPX-Fehler: '+err.message);}
   };
   r.readAsText(file);event.target.value='';
+}
+
+// Ordner-Import: der Nutzer wählt EINEN Ordner (z.B. Downloads), die App liest
+// alle GPX/JSON darin ein. Eine PWA darf das Dateisystem nicht von sich aus
+// durchsuchen — diese eine Ordner-Auswahl ist der nötige "Türöffner".
+// Schon vorhandene Tracks (gleiche id = Start-Zeitstempel) werden übersprungen.
+async function importFolder(event) {
+  const all = Array.from(event.target.files || []);
+  event.target.value = '';
+  const files = all.filter(f => /\.(gpx|xml|json)$/i.test(f.name));
+  if (!files.length) { toast('Keine GPX/JSON-Dateien im Ordner gefunden'); return; }
+  toast(`Importiere ${files.length} Dateien…`);
+  let added=0, skipped=0, failed=0;
+  for (const f of files) {
+    try {
+      const text = await f.text();
+      const isJson = /\.json$/i.test(f.name);
+      const {run} = isJson ? buildRunFromJsonText(text, f.name) : buildRunFromGpxText(text, f.name);
+      if (!run.points || run.points.length < 2) { failed++; continue; }
+      if (runs.find(x => x.id === run.id)) { skipped++; continue; }
+      await persistRunToIDB(run); // volle Daten sichern, bevor die nächste Datei kommt
+      runs.unshift(run);
+      added++;
+    } catch(err) { failed++; }
+  }
+  if (added) {
+    runs.sort((a,b) => b.startTs - a.startTs); // chronologisch, neueste zuerst
+    saveRuns();
+  }
+  renderHistory();
+  toast(`Import fertig: ${added} neu, ${skipped} schon vorhanden${failed?`, ${failed} übersprungen`:''}`);
 }
 
 // ══════════════════════════════════════════════
@@ -3807,7 +3913,7 @@ function updateLockScreen() {
 
   if (currentRun && currentRun.points.length > 1) {
     const avgSpeed = rollingAvg(currentRun.points, 'speed', SPEED_AVG_SEC);
-    const avgAltRate = altRateFromWindow(currentRun.points, ALT_AVG_SEC);
+    const avgAltRate = altRateLinfit(currentRun.points, ALT_RATE_WINDOW_M);
     document.getElementById('lockSpeed').textContent = avgSpeed.toFixed(1);
     document.getElementById('lockAltRate').textContent = Math.round(avgAltRate/10)*10;
   }
