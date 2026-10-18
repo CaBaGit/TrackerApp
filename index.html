@@ -560,7 +560,7 @@ body.offline #offlineBadge { display:block; }
     <div class="import-row">
       <label class="btn-import" style="cursor:pointer">📂 JSON<input type="file" accept=".json" style="display:none" onchange="importJSON(event)"></label>
       <label class="btn-import" style="cursor:pointer">🗺 GPX<input type="file" accept=".gpx,.xml" style="display:none" onchange="importGPX(event)"></label>
-      <label class="btn-import" style="cursor:pointer">📁 Ordner<input type="file" webkitdirectory multiple style="display:none" onchange="importFolder(event)"></label>
+      <label class="btn-import" style="cursor:pointer">📥 Mehrere<input type="file" accept=".gpx,.xml,.json" multiple style="display:none" onchange="importFolder(event)"></label>
     </div>
   </div>
   <div id="runList" style="padding:0 16px 16px"></div>
@@ -2526,15 +2526,16 @@ function importGPX(event) {
   r.readAsText(file);event.target.value='';
 }
 
-// Ordner-Import: der Nutzer wählt EINEN Ordner (z.B. Downloads), die App liest
-// alle GPX/JSON darin ein. Eine PWA darf das Dateisystem nicht von sich aus
-// durchsuchen — diese eine Ordner-Auswahl ist der nötige "Türöffner".
+// Mehrfach-Import: der Nutzer wählt mehrere Dateien auf einmal (z.B. alle GPX
+// im Download-Ordner — in Datei-Auswahl eine antippen, lange drücken, alle
+// markieren). Bewusst Datei- statt Ordner-Auswahl: Android verbietet die Ordner-
+// Auswahl für geschützte Ordner wie Download, Einzeldateien daraus sind aber ok.
 // Schon vorhandene Tracks (gleiche id = Start-Zeitstempel) werden übersprungen.
 async function importFolder(event) {
   const all = Array.from(event.target.files || []);
   event.target.value = '';
   const files = all.filter(f => /\.(gpx|xml|json)$/i.test(f.name));
-  if (!files.length) { toast('Keine GPX/JSON-Dateien im Ordner gefunden'); return; }
+  if (!files.length) { toast('Keine GPX/JSON-Dateien ausgewählt'); return; }
   toast(`Importiere ${files.length} Dateien…`);
   let added=0, skipped=0, failed=0;
   for (const f of files) {
