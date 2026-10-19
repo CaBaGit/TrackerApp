@@ -3,6 +3,37 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script>
+// AUTO-SKALIERUNG: Manche Handys/Chrome-Modi (z.B. "Desktop-Website")
+// ignorieren das Viewport-Tag und rendern die Seite ~980 px breit statt
+// ~412 → alles erscheint ~2,4× zu klein. Statt den Nutzer Einstellungen
+// ändern zu lassen, skaliert die App sich selbst: Ist das Fenster hochkant
+// wie ein Handy (Höhe > 1,6× Breite), aber breiter als ein Handy-Layout
+// (> 480 px), wird per CSS-zoom auf Handybreite hochskaliert. Tablets
+// (weniger hochkant) und Desktop (quer) bleiben unverändert.
+(function(){
+  function autoScale(){
+    var w = window.innerWidth, h = window.innerHeight;
+    var sw = screen.width;
+    var target = (sw >= 300 && sw <= 480) ? sw : 412;   // echte Gerätebreite, falls plausibel
+    var z = (w > 480 && h > w * 1.6) ? w / target : 1;
+    if (z <= 1.05) z = 1;
+    window.__uiZoom = z;
+    var de = document.documentElement;
+    de.style.zoom = z > 1 ? String(z) : '';
+    // vw/vh würden unter zoom doppelt skaliert (erst vom Fenster, dann vom
+    // zoom). Deshalb eigene Einheiten, die den zoom schon herausrechnen –
+    // die CSS nutzt calc(N * var(--vw)) statt Nvw.
+    de.style.setProperty('--vw', (w / z / 100) + 'px');
+    de.style.setProperty('--vh', (h / z / 100) + 'px');
+  }
+  autoScale();
+  window.addEventListener('resize', function(){
+    var before = window.__uiZoom; autoScale();
+    if (before !== window.__uiZoom && window.L) window.dispatchEvent(new Event('uizoomchange'));
+  });
+})();
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="LaufTracker">
@@ -20,9 +51,10 @@
   --text: #e8edf5; --muted: #5a6580;
   --mono: 'SF Mono','Fira Mono','Courier New',monospace;
   --r: 14px;
+  --vw: 1vw; --vh: 1vh; /* werden vom Auto-Skalierungs-Skript überschrieben */
   /* Einheitliche Tap-Größe für alles, was man in Bewegung treffen muss.
      Skaliert mit der Bildschirmbreite: ~58px ≈ 9,5 mm auf einem 6"-Handy. */
-  --tap: clamp(52px, 14vw, 64px);
+  --tap: clamp(52px, calc(14 * var(--vw)), 64px);
   --nav-h: calc(var(--tap) + 12px); /* Höhe der unteren Navigation */
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -92,7 +124,7 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
 
 /* ── Panel 0: Karte + kompakte Stats ── */
 #panelMap { position:relative; }
-#map { height:var(--map0-h, 42vh); min-height:120px; flex:none; position:relative; z-index:1; }
+#map { height:var(--map0-h, calc(42 * var(--vh))); min-height:120px; flex:none; position:relative; z-index:1; }
 /* Zieh-Griff zwischen Karte und Datenbereich (stufenlose Höhe) */
 .drag-handle { height:26px; flex:none; display:flex; align-items:center; justify-content:center; background:var(--panel,#151922); cursor:ns-resize; touch-action:none; position:relative; z-index:600; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
 .drag-handle::before { content:''; width:64px; height:6px; border-radius:3px; background:#ffffff; box-shadow:0 0 0 1px rgba(0,0,0,.3); }
@@ -110,7 +142,7 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
 .gps-label { font-size:14px; color:var(--muted); flex:1; }
 .gps-acc   { font-family:var(--mono); font-size:13px; color:var(--accent); }
 
-.timer-big { text-align:center; font-family:var(--mono); font-size:clamp(34px,10vw,52px); font-weight:300; letter-spacing:-0.02em; background:linear-gradient(120deg,var(--text) 30%,var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:10px; flex-shrink:0; }
+.timer-big { text-align:center; font-family:var(--mono); font-size:clamp(34px,calc(10 * var(--vw)),52px); font-weight:300; letter-spacing:-0.02em; background:linear-gradient(120deg,var(--text) 30%,var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:10px; flex-shrink:0; }
 
 .speed-chart-wrap { background:var(--card); border-radius:var(--r); border:1px solid var(--border); padding:8px 12px; margin-bottom:8px; }
 .speed-chart-wrap-large { flex:1; display:flex; flex-direction:column; min-height:0; margin-bottom:10px; }
@@ -129,8 +161,8 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
 .big-rows { flex:1; display:flex; flex-direction:column; justify-content:space-evenly; min-height:0; }
 .big-row { display:flex; align-items:baseline; gap:10px; padding:0 2px; border-bottom:1px solid rgba(255,255,255,0.05); }
 .big-row:last-child { border-bottom:none; }
-.big-row-unit { font-family:var(--mono); font-size:clamp(20px,6vw,44px); font-weight:500; color:var(--muted); width:clamp(40px,11vw,64px); flex-shrink:0; }
-.big-row-val  { font-family:var(--mono); font-size:var(--big-val-size, clamp(56px,19vw,112px)); font-weight:700; line-height:0.95; flex:1; text-align:right; }
+.big-row-unit { font-family:var(--mono); font-size:clamp(20px,calc(6 * var(--vw)),44px); font-weight:500; color:var(--muted); width:clamp(40px,calc(11 * var(--vw)),64px); flex-shrink:0; }
+.big-row-val  { font-family:var(--mono); font-size:var(--big-val-size, clamp(56px,calc(19 * var(--vw)),112px)); font-weight:700; line-height:0.95; flex:1; text-align:right; }
 .big-row-val.c-accent { color:var(--accent); }
 .big-row-val.c-blue   { color:var(--blue); }
 .big-row-val.c-white  { color:var(--text); }
@@ -153,7 +185,7 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
   flex-shrink:0; margin-bottom:4px;
 }
 .full-header-timer {
-  font-family:var(--mono); font-size:clamp(16px,4.5vw,22px);
+  font-family:var(--mono); font-size:clamp(16px,calc(4.5 * var(--vw)),22px);
   font-weight:300; letter-spacing:-0.01em;
   background:linear-gradient(120deg,var(--text) 30%,var(--accent));
   -webkit-background-clip:text; -webkit-text-fill-color:transparent;
@@ -171,14 +203,14 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
 .full-row:last-child { border-bottom:none; }
 .full-row-unit {
   font-family:var(--mono);
-  font-size:clamp(36px,11vw,64px);
+  font-size:clamp(36px,calc(11 * var(--vw)),64px);
   font-weight:500; color:var(--muted);
-  width:clamp(52px,14vw,80px); flex-shrink:0;
+  width:clamp(52px,calc(14 * var(--vw)),80px); flex-shrink:0;
   text-align:left;
 }
 .full-row-val {
   font-family:var(--mono);
-  font-size:clamp(72px,22vw,128px);
+  font-size:clamp(72px,calc(22 * var(--vw)),128px);
   font-weight:700; line-height:0.92;
   flex:1; text-align:right;
 }
@@ -346,7 +378,7 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
   display:none; position:fixed; inset:0; z-index:99999;
   background:#000;
   flex-direction:column; align-items:center; justify-content:center;
-  gap:clamp(8px, 2.5svh, 20px); cursor:none;
+  gap:clamp(8px, calc(2.5 * var(--vh)), 20px); cursor:none;
   overflow:hidden; /* nichts darf über den Rand laufen */
   touch-action:none;
   overscroll-behavior:none;
@@ -366,7 +398,7 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
 }
 #screenLockHint.flash { color:rgba(255,255,255,0.6); }
 #screenLockNumbers {
-  display:flex; gap:clamp(12px, 4vw, 32px); align-items:center; justify-content:center;
+  display:flex; gap:clamp(12px, calc(4 * var(--vw)), 32px); align-items:center; justify-content:center;
   width:100%; padding:0 16px; box-sizing:border-box;
 }
 .lock-num-wrap { display:flex; flex-direction:column; align-items:center; flex:1; min-width:0; }
@@ -374,23 +406,23 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
    min() nimmt den kleinsten Wert → läuft nie über den Rand, egal welches Gerät. */
 .lock-num {
   font-family:var(--mono); font-weight:700; color:#fff;
-  font-size:min(14svh, 17vw, 84px); line-height:0.9;
+  font-size:min(calc(14 * var(--vh)), calc(17 * var(--vw)), 84px); line-height:0.9;
   text-align:center; min-width:0;
 }
 .lock-num-unit {
-  font-family:var(--mono); font-size:min(3svh, 4.5vw, 22px);
+  font-family:var(--mono); font-size:min(calc(3 * var(--vh)), calc(4.5 * var(--vw)), 22px);
   color:rgba(255,255,255,0.4); margin-top:4px; letter-spacing:0.06em;
 }
 .lock-divider {
-  width:1px; height:min(11svh, 90px); background:rgba(255,255,255,0.12); flex:none;
+  width:1px; height:min(calc(11 * var(--vh)), 90px); background:rgba(255,255,255,0.12); flex:none;
 }
 .lock-clock {
-  font-family:var(--mono); font-size:min(10svh, 16vw, 68px);
+  font-family:var(--mono); font-size:min(calc(10 * var(--vh)), calc(16 * var(--vw)), 68px);
   font-weight:300; color:rgba(255,255,255,0.85);
   letter-spacing:0.04em;
 }
 .lock-timer {
-  font-family:var(--mono); font-size:min(5svh, 9vw, 38px);
+  font-family:var(--mono); font-size:min(calc(5 * var(--vh)), calc(9 * var(--vw)), 38px);
   font-weight:300; color:rgba(255,255,255,0.35);
   letter-spacing:0.02em;
 }
@@ -423,13 +455,6 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
   border-radius:var(--r); font-size:30px; cursor:pointer;
 }
 #btnLock:active { opacity:0.6; }
-/* Warnung: Chrome läuft im Modus "Desktop-Website" */
-#desktopModeBanner { display:none; position:fixed; top:0; left:0; right:0; z-index:100000;
-  background:#f97316; color:#1a0a00; font:600 4.2vw/1.35 -apple-system,sans-serif; /* vw: im Desktop-Modus trotzdem lesbar */
-  padding:3.5vw 15vw 3.5vw 4vw; padding-top:calc(3.5vw + env(safe-area-inset-top)); }
-#desktopModeBanner.show { display:block; }
-#desktopModeBanner button { position:absolute; right:2vw; top:calc(2vw + env(safe-area-inset-top));
-  width:12vw; height:12vw; border:none; background:rgba(0,0,0,0.15); border-radius:2.5vw; font-size:6vw; }
 /* Kartenoptionen im Info-Tab */
 .map-opt-row { display:flex; gap:8px; }
 .map-opt-row .act-filter-btn { flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; border-radius:12px; }
@@ -438,9 +463,6 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
 </head>
 <body>
 
-<div id="desktopModeBanner">Chrome zeigt die <b>Desktop-Version</b> – dadurch ist alles ca. 2× zu klein.<br>
-  Abhilfe: Chrome öffnen → Einstellungen → Website-Einstellungen → <b>Desktop-Website</b> ausschalten (bzw. die Ausnahme für diese Seite entfernen), dann App neu starten.
-  <button onclick="window._dmDismissed=true;this.parentElement.classList.remove('show')" aria-label="Schließen">✕</button></div>
 <div id="offlineBadge">✈ Offline</div>
 <div id="gpsWarnBadge"><span class="tri">⚠️</span><span id="gpsWarnText">GPS-Empfang schwach</span></div>
 <div id="installBanner">
@@ -989,7 +1011,9 @@ swipeEl.addEventListener('touchmove', e => {
   // Nur horizontale Swipes verarbeiten, vertikales Scrollen ignorieren
   if (Math.abs(swipeDx) < Math.abs(dy)) { swiping = false; goToView(currentView); return; }
   e.preventDefault(); // Verhindert Scroll während Swipe
-  slider.style.transform = `translateX(calc(-${currentView * 100}% + ${swipeDx}px))`;
+  // Fingerweg ist in sichtbaren px, transform wirkt unter der Auto-Skalierung
+  // (zoom) aber in skalierten px → durch zoom teilen, damit das Panel dem Finger folgt
+  slider.style.transform = `translateX(calc(-${currentView * 100}% + ${swipeDx / (window.__uiZoom||1)}px))`;
 }, {passive:false}); // passive:false nötig für preventDefault()
 
 swipeEl.addEventListener('touchend', e => {
@@ -1355,21 +1379,27 @@ function renderMapSettings() {
 
 renderMapSettings();
 
-// Erkennt Chromes Modus "Desktop-Website": dann ignoriert Chrome das mobile
-// Viewport-Tag und rendert ~980 CSS-px breit, obwohl der Bildschirm nur ~400
-// breit ist → die ganze App erscheint ~2,4× zu klein. screen.width bleibt die
-// echte Gerätebreite, innerWidth ist die (falsche) Layoutbreite.
+// Canvas-Auflösung: Gerätepixel × Auto-Zoom, sonst sind Charts unter der
+// Auto-Skalierung unscharf (Canvas wird um den zoom-Faktor hochgezogen).
+function canvasDpr() { return (window.devicePixelRatio || 1) * (window.__uiZoom || 1); }
+
+// Diagnose im Info-Tab: zeigt, ob die Auto-Skalierung (Skript im <head>)
+// eingreifen musste, z.B. weil Chrome im Modus "Desktop-Website" ~980 px
+// breit rendert statt ~412.
 function checkViewport() {
   const w = window.innerWidth, h = window.innerHeight, sw = screen.width, dpr = window.devicePixelRatio || 1;
-  const touch = (navigator.maxTouchPoints || 0) > 0;
-  const desktopMode = touch && w > sw * 1.3;
+  const z = window.__uiZoom || 1;
   const el = document.getElementById('viewportInfo');
-  if (el) el.textContent = `Seitenbreite ${w} × ${h} CSS-px · Bildschirm ${sw} px breit · Pixeldichte ${dpr.toFixed(2)}`
-    + (desktopMode ? ' · ⚠ Desktop-Modus aktiv (alles zu klein)' : ' · ✓ Mobil-Darstellung');
-  document.getElementById('desktopModeBanner')?.classList.toggle('show', desktopMode && !window._dmDismissed);
+  if (el) el.textContent = `Seitenbreite ${w} × ${h} px · Bildschirm ${sw} px · Pixeldichte ${dpr.toFixed(2)}`
+    + (z > 1 ? ` · automatisch ×${z.toFixed(2)} vergrößert (Chrome rendert zu breit)` : ' · ✓ normale Mobil-Darstellung');
 }
 checkViewport();
 window.addEventListener('resize', checkViewport);
+// Auto-Zoom hat sich geändert (z.B. Handy gedreht) → Karten neu vermessen
+window.addEventListener('uizoomchange', () => {
+  [typeof tMap!=='undefined'&&tMap, typeof tMap2!=='undefined'&&tMap2, typeof cMap!=='undefined'&&cMap, typeof pMap!=='undefined'&&pMap]
+    .forEach(m => { if (m) m.invalidateSize(); });
+});
 
 function makeMap(id) {
   const m = L.map(id, {zoomControl:false, attributionControl:false}).setView([48.1,11.6],15);
@@ -2053,8 +2083,8 @@ function updateRefMarker(distKm) {
 function drawLiveChart(points) {
   const YAXIS_W = 30;
   const W0 = speedCanvas.offsetWidth||300, H = speedCanvas.offsetHeight||46;
-  speedCanvas.width = W0*devicePixelRatio; speedCanvas.height = H*devicePixelRatio;
-  speedCtx.scale(devicePixelRatio, devicePixelRatio);
+  speedCanvas.width = W0*canvasDpr(); speedCanvas.height = H*canvasDpr();
+  speedCtx.scale(canvasDpr(), canvasDpr());
   speedCtx.clearRect(0,0,W0,H);
   if (points.length < 2) return;
   const W = W0 - YAXIS_W;
@@ -2095,7 +2125,7 @@ function drawLiveChart(points) {
   const yS   = v => H - ((v-minS)/(maxS-minS)) * (H-6) - 2;
   const yA   = v => H - ((v-minA)/(maxA-minA)) * (H-6) - 2;
 
-  speedCtx.font = `${Math.round(8*devicePixelRatio)/devicePixelRatio}px sans-serif`;
+  speedCtx.font = `${Math.round(8*canvasDpr())/canvasDpr()}px sans-serif`;
 
   // ── Gridlines Speed (grün, gestrichelt) ──
   speedCtx.setLineDash([2,3]);
@@ -2164,8 +2194,8 @@ function drawLiveChart(points) {
 
 function drawDetailChart(points,canvas,ctx,refPoints) {
   const W=canvas.offsetWidth||300,H=canvas.offsetHeight||80;
-  canvas.width=W*devicePixelRatio;canvas.height=H*devicePixelRatio;
-  ctx.scale(devicePixelRatio,devicePixelRatio);ctx.clearRect(0,0,W,H);
+  canvas.width=W*canvasDpr();canvas.height=H*canvasDpr();
+  ctx.scale(canvasDpr(),canvasDpr());ctx.clearRect(0,0,W,H);
   if(!points||points.length<2) return;
   const speeds=points.map(p=>p.speed||0),refSpeeds=refPoints?refPoints.map(p=>p.speed||0):[];
   const maxS=Math.max(...speeds,...(refSpeeds.length?refSpeeds:[0]),1);
@@ -3071,9 +3101,9 @@ function drawChartFull() {
   const wrap = canvas.parentElement;
   const W = wrap.clientWidth, H = wrap.clientHeight;
   if (W < 10 || H < 10) { requestAnimationFrame(drawChartFull); return; } // Layout noch nicht fertig
-  canvas.width = W*devicePixelRatio; canvas.height = H*devicePixelRatio;
+  canvas.width = W*canvasDpr(); canvas.height = H*canvasDpr();
   const ctx = canvas.getContext('2d');
-  ctx.setTransform(1,0,0,1,0,0); ctx.scale(devicePixelRatio, devicePixelRatio);
+  ctx.setTransform(1,0,0,1,0,0); ctx.scale(canvasDpr(), canvasDpr());
   ctx.clearRect(0,0,W,H);
 
   // Serie + Stil je nach Metrik
@@ -3128,9 +3158,9 @@ function drawSegmentCharts(seg, wattSeries) {
   const sc = document.getElementById('segSpeedCanvas');
   const sctx = sc.getContext('2d');
   const W = sc.offsetWidth || 300;
-  sc.width = W*devicePixelRatio; sc.height = 60*devicePixelRatio;
+  sc.width = W*canvasDpr(); sc.height = 60*canvasDpr();
   sctx.setTransform(1,0,0,1,0,0);
-  sctx.scale(devicePixelRatio, devicePixelRatio);
+  sctx.scale(canvasDpr(), canvasDpr());
   sctx.clearRect(0,0,W,60);
 
   const speeds = seg.map(p=>p.speed||0);
@@ -3155,9 +3185,9 @@ function drawSegmentCharts(seg, wattSeries) {
   // Höhen-Chart
   const ac = document.getElementById('segAltCanvas');
   const actx = ac.getContext('2d');
-  ac.width = W*devicePixelRatio; ac.height = 44*devicePixelRatio;
+  ac.width = W*canvasDpr(); ac.height = 44*canvasDpr();
   actx.setTransform(1,0,0,1,0,0);
-  actx.scale(devicePixelRatio, devicePixelRatio);
+  actx.scale(canvasDpr(), canvasDpr());
   actx.clearRect(0,0,W,44);
 
   const alts = seg.map(p=>p.alt||0).filter(a=>a>0);
@@ -3186,9 +3216,9 @@ function drawSegmentCharts(seg, wattSeries) {
   if (wattSeries && wattSeries.length > 1) {
     wblock.style.display = '';
     const wctx = wc.getContext('2d');
-    wc.width = W*devicePixelRatio; wc.height = 44*devicePixelRatio;
+    wc.width = W*canvasDpr(); wc.height = 44*canvasDpr();
     wctx.setTransform(1,0,0,1,0,0);
-    wctx.scale(devicePixelRatio, devicePixelRatio);
+    wctx.scale(canvasDpr(), canvasDpr());
     wctx.clearRect(0,0,W,44);
 
     const maxW = Math.max(...wattSeries, 1);
@@ -4105,7 +4135,10 @@ function checkLGesture(points) {
 function drawLockGesturePath() {
   const svg = document.getElementById('lockGestureSvg');
   if (!svg || lockGesturePoints.length < 2) return;
-  const d = lockGesturePoints.map((p,i)=>`${i===0?'M':'L'}${p.x},${p.y}`).join(' ');
+  // Touch-Koordinaten sind sichtbare px; das SVG liegt im (ggf. gezoomten)
+  // Dokument → durch den Auto-Zoom teilen, sonst läuft die Spur dem Finger davon
+  const z = window.__uiZoom || 1;
+  const d = lockGesturePoints.map((p,i)=>`${i===0?'M':'L'}${p.x/z},${p.y/z}`).join(' ');
   let path = svg.querySelector('path');
   if (!path) {
     path = document.createElementNS('http://www.w3.org/2000/svg','path');
@@ -4210,8 +4243,11 @@ function setupMapResizeHandles() {
       if (!dragging || screenLocked) return; // gesperrt → sofort abbrechen
       const y = e.touches ? e.touches[0].clientY : e.clientY;
       const rect = container.getBoundingClientRect();
-      let h = y - rect.top;               // gewünschte Kartenhöhe = Mausposition relativ zum Container-Oberrand
-      const maxH = rect.height * cfg.maxFrac;
+      // Finger und Rechteck sind in sichtbaren px; die CSS-Variable wirkt unter
+      // der Auto-Skalierung in skalierten px → durch zoom teilen
+      const z = window.__uiZoom || 1;
+      let h = (y - rect.top) / z;         // gewünschte Kartenhöhe = Fingerposition relativ zum Container-Oberrand
+      const maxH = rect.height / z * cfg.maxFrac;
       h = Math.max(cfg.minPx, Math.min(maxH, h));
       container.style.setProperty(cfg.cssVar, h + 'px');
       const m = cfg.map();
