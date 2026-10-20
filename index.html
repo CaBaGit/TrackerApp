@@ -57,7 +57,7 @@
   /* Einheitliche Tap-Größe für alles, was man in Bewegung treffen muss.
      Skaliert mit der Bildschirmbreite: ~58px ≈ 9,5 mm auf einem 6"-Handy. */
   --tap: clamp(52px, calc(14 * var(--vw)), 64px);
-  --nav-h: calc(var(--tap) + 12px); /* Höhe der unteren Navigation */
+  --nav-h: calc((var(--tap) + 12px) * 0.9); /* Höhe der unteren Navigation (−10 %) */
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
@@ -79,8 +79,8 @@ body.offline #offlineBadge { display:block; }
 
 /* ── NAV ── */
 #nav { position:fixed; bottom:0; left:0; right:0; z-index:1000; height:calc(var(--nav-h) + env(safe-area-inset-bottom)); background:var(--surface); border-top:1px solid var(--border); display:flex; padding-bottom:env(safe-area-inset-bottom); }
-.nav-btn { flex:1; height:var(--nav-h); padding:6px 4px; border:none; background:none; color:var(--muted); font-size:14px; letter-spacing:0.03em; text-transform:uppercase; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; transition:color 0.2s; }
-.nav-btn svg { width:28px; height:28px; }
+.nav-btn { flex:1; height:var(--nav-h); padding:5px 4px; border:none; background:none; color:var(--muted); font-size:12.6px; letter-spacing:0.03em; text-transform:uppercase; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; transition:color 0.2s; }
+.nav-btn svg { width:25px; height:25px; }
 .nav-btn.active { color:var(--accent); }
 
 /* ── PAGES ── */
@@ -187,7 +187,7 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
   flex-shrink:0; margin-bottom:4px;
 }
 .full-header-timer {
-  font-family:var(--mono); font-size:clamp(16px,calc(4.5 * var(--vw)),22px);
+  font-family:var(--mono); font-size:clamp(19.2px,calc(5.4 * var(--vw)),26.4px); /* +20 % */
   font-weight:300; letter-spacing:-0.01em;
   background:linear-gradient(120deg,var(--text) 30%,var(--accent));
   -webkit-background-clip:text; -webkit-text-fill-color:transparent;
@@ -224,13 +224,13 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
 /* ── Controls (shared bottom bar) ── */
 #ctrlBar { background:var(--bg); padding:0 14px 10px; flex-shrink:0; }
 .ctrl-row { display:flex; gap:8px; }
-.btn { flex:1; min-height:calc(var(--tap) + 8px); padding:12px 14px; border:none; border-radius:var(--r); font-size:19px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; transition:transform 0.1s,opacity 0.2s; }
+.btn { flex:1; min-height:calc((var(--tap) + 8px) * 0.9); padding:11px 13px; border:none; border-radius:var(--r); font-size:17px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; transition:transform 0.1s,opacity 0.2s; }
 .btn:active { transform:scale(0.97); }
 .btn:disabled { opacity:0.3; cursor:not-allowed; }
 .btn-start { background:linear-gradient(135deg,#00e5a0,#00b87a); color:#001a0d; }
 .btn-stop  { background:linear-gradient(135deg,#ef4444,#b91c1c); color:#fff; }
-.btn-save  { background:var(--card); color:var(--accent); border:1px solid var(--accent); flex:0 0 auto; padding:12px 14px; font-size:15px; }
-.btn-icon  { flex:0 0 auto; min-width:var(--tap); padding:12px 14px; background:var(--card); color:var(--muted); border:1px solid var(--border); font-size:26px; }
+.btn-save  { background:var(--card); color:var(--accent); border:1px solid var(--accent); flex:0 0 auto; padding:11px 13px; font-size:13.5px; }
+.btn-icon  { flex:0 0 auto; min-width:calc(var(--tap) * 0.9); padding:11px 13px; background:var(--card); color:var(--muted); border:1px solid var(--border); font-size:23px; }
 
 /* ── HISTORY ── */
 #page-history { background:var(--bg); padding:16px; }
@@ -451,10 +451,10 @@ body.nav-hidden .page { bottom:env(safe-area-inset-bottom); }
 
 /* Lock button in ctrl bar */
 #btnLock {
-  flex:0 0 auto; min-width:calc(var(--tap) + 12px); min-height:calc(var(--tap) + 8px);
+  flex:0 0 auto; min-width:calc((var(--tap) + 12px) * 0.9); min-height:calc((var(--tap) + 8px) * 0.9);
   padding:10px 18px; background:var(--card);
   color:var(--text); border:1px solid rgba(255,255,255,0.15);
-  border-radius:var(--r); font-size:30px; cursor:pointer;
+  border-radius:var(--r); font-size:27px; cursor:pointer;
 }
 #btnLock:active { opacity:0.6; }
 /* Kartenoptionen im Info-Tab */
@@ -1697,7 +1697,7 @@ function updateToggleBtn() {
     btn.className = 'btn btn-stop';
     // Während Aufzeichnung: Reset verstecken (Vertipper-Schutz), Lock nimmt die Breite
     if (btnReset) btnReset.style.display = 'none';
-    if (btnLock)  { btnLock.style.flex = '1'; btnLock.style.fontSize = '36px'; }
+    if (btnLock)  { btnLock.style.flex = '1'; btnLock.style.fontSize = '32px'; }
     // Nav-Leiste ausblenden: der "Aktivität"-Tab lag direkt unter dem Sperr-
     // button → Vertipper in Bewegung. Jetzt füllt die Steuerleiste die Ecke.
     if (nav) nav.style.display = 'none';
@@ -4326,4 +4326,3 @@ window.addEventListener('load', async () => {
 </script>
 </body>
 </html>
-
